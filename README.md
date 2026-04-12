@@ -1,6 +1,6 @@
 # opn-mcp
 
-A read-only MCP server for monitoring an OPNsense firewall via its REST API.
+An MCP server for monitoring an OPNsense firewall via its REST API. Primarily read-only with limited, safe write operations.
 
 ## Tools
 
@@ -10,7 +10,11 @@ A read-only MCP server for monitoring an OPNsense firewall via its REST API.
 | `get_interfaces` | All interfaces with status, IP, MAC, traffic counters |
 | `get_gateway_status` | Gateways with status, RTT, packet loss |
 | `get_dhcp_leases` | Active DHCP leases |
+| `get_firewall_rules` | All firewall filter rules |
 | `get_firewall_logs` | Recent firewall log entries (filterable by interface/limit) |
+| `get_dnat_rules` | Destination NAT (port-forward) rules |
+| `get_snat_rules` | Source NAT (outbound) rules |
+| `toggle_dnat_rule` | Enable/disable a DNAT rule by UUID (anti-lockout rules protected) |
 | `get_wireguard_status` | WireGuard instances and peers |
 | `get_arp_table` | ARP table entries |
 | `get_unbound_stats` | Unbound DNS resolver statistics |
@@ -28,41 +32,13 @@ A read-only MCP server for monitoring an OPNsense firewall via its REST API.
 5. A file will download containing the key and secret — save these securely
 6. For read-only access, assign the user to a group with only read/monitoring privileges
 
-### 2. Configure Environment
-
-Copy the example env file and fill in your values:
+### 2. Build the Docker Image
 
 ```bash
-cp .env.example .env
+docker build -t opn-mcp .
 ```
 
-Edit `.env`:
-
-```
-OPNSENSE_HOST=192.168.1.1
-OPNSENSE_API_KEY=your_key
-OPNSENSE_API_SECRET=your_secret
-OPNSENSE_VERIFY_SSL=false
-```
-
-### 3. Run with Docker
-
-```bash
-docker compose up -d
-```
-
-The server will be available at `http://localhost:8000/sse`.
-
-### 4. Run Locally (without Docker)
-
-```bash
-pip install .
-python server.py
-```
-
-## MCP Client Configuration
-
-### Claude Desktop
+### 3. Configure Claude Desktop
 
 Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
@@ -70,22 +46,31 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 {
   "mcpServers": {
     "opnsense": {
-      "command": "python",
-      "args": ["/path/to/opn-mcp/server.py"],
-      "env": {
-        "OPNSENSE_HOST": "192.168.1.1",
-        "OPNSENSE_API_KEY": "your_key",
-        "OPNSENSE_API_SECRET": "your_secret",
-        "OPNSENSE_VERIFY_SSL": "false"
-      }
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm", "--name", "opn-mcp",
+        "-e", "OPNSENSE_HOST=opnsense.example.com",
+        "-e", "OPNSENSE_API_KEY=your_key",
+        "-e", "OPNSENSE_API_SECRET=your_secret",
+        "-e", "OPNSENSE_VERIFY_SSL=true",
+        "opn-mcp"
+      ]
     }
   }
 }
 ```
 
-### Claude Desktop (remote via Docker/Tailscale)
+Set `OPNSENSE_VERIFY_SSL` to `false` if your OPNsense uses a self-signed certificate.
 
-If running the server on another machine reachable over Tailscale or LAN:
+### Run with SSE Transport (Remote Access)
+
+To run as a persistent service reachable over Tailscale or LAN:
+
+```bash
+docker compose up -d
+```
+
+This starts the server with SSE transport on port 8000. Connect from Claude Desktop:
 
 ```json
 {
@@ -97,25 +82,27 @@ If running the server on another machine reachable over Tailscale or LAN:
 }
 ```
 
+Note: the `docker-compose.yml` uses a `.env` file — copy `.env.example` and fill in your values.
+
+### Run Locally (without Docker)
+
+```bash
+pip install .
+python server.py
+```
+
+Pass `--sse` to use SSE transport instead of stdio.
+
 ### Claude Code
 
 ```bash
 claude mcp add opnsense http://localhost:8000/sse
 ```
 
-Or for a remote instance:
-
-```bash
-claude mcp add opnsense http://<tailscale-ip-or-hostname>:8000/sse
-```
-
-### claude.ai (Remote MCP)
-
-Use the SSE URL directly: `http://<your-host>:8000/sse`
-
 ## Notes
 
-- All tools are **read-only** — no configuration changes are made to OPNsense
-- SSL verification is disabled by default since most OPNsense installations use self-signed certificates
-- The server uses SSE transport by default, suitable for remote access over Tailscale/LAN
+- Most tools are **read-only** — the only write operation is `toggle_dnat_rule`, which can enable/disable existing DNAT rules
+- Anti-lockout rules are protected and cannot be toggled
+- SSL verification is configurable via `OPNSENSE_VERIFY_SSL` (set to `false` for self-signed certs)
+- The server defaults to stdio transport (for Claude Desktop via Docker), pass `--sse` for remote access
 - Some endpoints may not be available depending on your OPNsense version and installed plugins
