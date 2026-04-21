@@ -1,6 +1,7 @@
 services:
   opn-mcp:
     build: .
+    command: ["python", "server.py", "--sse"]
     ports:
       - "8000:8000"
     env_file:

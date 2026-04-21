@@ -11,7 +11,7 @@ An MCP server for monitoring an OPNsense firewall via its REST API. Primarily re
 | `get_gateway_status` | Gateways with status, RTT, packet loss |
 | `get_dhcp_leases` | Active DHCP leases |
 | `get_firewall_rules` | All firewall filter rules |
-| `get_firewall_logs` | Recent firewall log entries (filterable by interface/limit) |
+| `get_log` | Recent log entries from any source: `firewall` (pf rule hits), `audit`, `configd`, `kernel`, `resolver`, `routing`, `ipsec`, `openvpn`, `wireguard`, `dhcpd`, etc. Filterable by severity and free-text search. |
 | `get_dnat_rules` | Destination NAT (port-forward) rules |
 | `get_snat_rules` | Source NAT (outbound) rules |
 | `toggle_dnat_rule` | Enable/disable a DNAT rule by UUID (anti-lockout rules protected) |
@@ -20,6 +20,7 @@ An MCP server for monitoring an OPNsense firewall via its REST API. Primarily re
 | `get_unbound_stats` | Unbound DNS resolver statistics |
 | `ping_host` | Ping a host from OPNsense |
 | `get_openvpn_status` | OpenVPN server/client status |
+| `get_tailscale_status` | Tailscale plugin service status and settings (requires os-tailscale) |
 
 ## Setup
 

@@ -149,20 +149,64 @@ async def get_dhcp_leases() -> dict:
         return _error(f"Failed to get DHCP leases: {e}")
 
 
+LOG_SOURCES = {
+    "firewall": "pf/filter",
+    "firewall_subsys": "pf/firewall",
+    "audit": "core/audit",
+    "configd": "core/configd",
+    "kernel": "core/kernel",
+    "resolver": "core/resolver",
+    "routing": "core/routing",
+    "wireless": "core/wireless",
+    "lighttpd": "core/lighttpd",
+    "pkg": "core/pkg",
+    "ipsec": "ipsec/ipsec",
+    "openvpn": "openvpn/openvpn",
+    "wireguard": "wireguard/wireguard",
+    "ntpd": "ntpd/ntpd",
+    "monit": "monit/monit",
+    "captiveportal": "captiveportal/portalauth",
+    "dnsmasq": "dnsmasq/dnsmasq",
+    "dhcpd": "dhcpd/dhcpd",
+}
+
+
 @mcp.tool()
-async def get_firewall_logs(limit: int = 50, interface: str = "") -> dict:
-    """Get recent firewall log entries. Optionally filter by interface name and limit the number of results."""
+async def get_log(
+    source: str = "firewall",
+    limit: int = 50,
+    severity: str = "",
+    search: str = "",
+) -> dict:
+    """Get recent OPNsense log entries.
+
+    Source aliases: 'firewall' (pf/filter rule hits), 'firewall_subsys', 'audit',
+    'configd', 'kernel', 'resolver', 'routing', 'wireless', 'lighttpd', 'pkg',
+    'ipsec', 'openvpn', 'wireguard', 'ntpd', 'monit', 'captiveportal', 'dnsmasq',
+    'dhcpd'. Alternatively pass a raw 'module/scope' path (e.g. 'pf/filter').
+
+    Optional: severity (e.g. 'Error', 'Warning', 'Notice', 'Informational'),
+    search (free-text phrase).
+    """
     try:
-        params = {"limit": str(limit)}
-        if interface:
-            params["interface"] = interface
+        path = LOG_SOURCES.get(source, source)
+        if path.count("/") != 1:
+            return _error(
+                f"Unknown log source '{source}'. Pass a known alias or 'module/scope'."
+            )
+
+        body: dict = {"rowCount": limit, "current": 1}
+        if severity:
+            body["severity"] = severity
+        if search:
+            body["searchPhrase"] = search
 
         async with _client() as client:
-            resp = await client.get("/diagnostics/firewall/log", params=params)
+            resp = await client.post(f"/diagnostics/log/{path}", json=body)
             resp.raise_for_status()
             return resp.json()
     except Exception as e:
-        return _error(f"Failed to get firewall logs: {e}")
+        return _error(f"Failed to get '{source}' log: {e}")
 
 
 @mcp.tool()
@@ -236,6 +280,32 @@ async def get_openvpn_status() -> dict:
         return results
     except Exception as e:
         return _error(f"Failed to get OpenVPN status: {e}")
+
+
+@mcp.tool()
+async def get_tailscale_status() -> dict:
+    """Get Tailscale plugin service status and configured settings. Requires the os-tailscale plugin."""
+    try:
+        results = {}
+
+        async with _client() as client:
+            try:
+                r = await client.get("/tailscale/service/status")
+                r.raise_for_status()
+                results["service"] = r.json()
+            except Exception as e:
+                results["service"] = _error(str(e))
+
+            try:
+                r = await client.get("/tailscale/settings/get")
+                r.raise_for_status()
+                results["settings"] = r.json()
+            except Exception as e:
+                results["settings"] = _error(str(e))
+
+        return results
+    except Exception as e:
+        return _error(f"Failed to get Tailscale status: {e}")
 
 
 @mcp.tool()
