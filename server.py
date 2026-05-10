@@ -1,7 +1,10 @@
 """MCP server for read-only OPNsense firewall monitoring."""
 
+import collections
 import os
+import re
 import ssl
+from typing import Any
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -162,11 +165,13 @@ async def get_dhcp_leases() -> dict:
 
 
 LOG_SOURCES = {
-    "firewall": "pf/filter",
-    "firewall_subsys": "pf/firewall",
+    # The pf/filter path returns nothing on modern OPNsense; the real filterlog
+    # output lives at /var/log/filter/latest.log.
+    "firewall": "filter/latest",
     "audit": "core/audit",
     "configd": "core/configd",
     "kernel": "core/kernel",
+    "system": "core/system",
     "resolver": "core/resolver",
     "routing": "core/routing",
     "wireless": "core/wireless",
@@ -183,6 +188,29 @@ LOG_SOURCES = {
 }
 
 
+async def _fetch_log(
+    source: str,
+    limit: int = 50,
+    severity: str = "",
+    search: str = "",
+) -> dict:
+    """Internal log fetch. Raises on error; used by get_log and the security tools."""
+    path = LOG_SOURCES.get(source, source)
+    if path.count("/") != 1:
+        raise ValueError(
+            f"Unknown log source '{source}'. Pass a known alias or 'module/scope'."
+        )
+    body: dict = {"rowCount": limit, "current": 1}
+    if severity:
+        body["severity"] = severity
+    if search:
+        body["searchPhrase"] = search
+    async with _client() as client:
+        resp = await client.post(f"/diagnostics/log/{path}", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+
 @mcp.tool()
 async def get_log(
     source: str = "firewall",
@@ -192,31 +220,16 @@ async def get_log(
 ) -> dict:
     """Get recent OPNsense log entries.
 
-    Source aliases: 'firewall' (pf/filter rule hits), 'firewall_subsys', 'audit',
-    'configd', 'kernel', 'resolver', 'routing', 'wireless', 'lighttpd', 'pkg',
-    'ipsec', 'openvpn', 'wireguard', 'ntpd', 'monit', 'captiveportal', 'dnsmasq',
-    'dhcpd'. Alternatively pass a raw 'module/scope' path (e.g. 'pf/filter').
+    Source aliases: 'firewall' (pf filterlog), 'audit', 'configd', 'kernel',
+    'system', 'resolver', 'routing', 'wireless', 'lighttpd', 'pkg', 'ipsec',
+    'openvpn', 'wireguard', 'ntpd', 'monit', 'captiveportal', 'dnsmasq',
+    'dhcpd'. Alternatively pass a raw 'module/scope' path (e.g. 'filter/latest').
 
     Optional: severity (e.g. 'Error', 'Warning', 'Notice', 'Informational'),
     search (free-text phrase).
     """
     try:
-        path = LOG_SOURCES.get(source, source)
-        if path.count("/") != 1:
-            return _error(
-                f"Unknown log source '{source}'. Pass a known alias or 'module/scope'."
-            )
-
-        body: dict = {"rowCount": limit, "current": 1}
-        if severity:
-            body["severity"] = severity
-        if search:
-            body["searchPhrase"] = search
-
-        async with _client() as client:
-            resp = await client.post(f"/diagnostics/log/{path}", json=body)
-            resp.raise_for_status()
-            return resp.json()
+        return await _fetch_log(source, limit=limit, severity=severity, search=search)
     except Exception as e:
         return _error(f"Failed to get '{source}' log: {_fmt_exc(e)}")
 
@@ -386,6 +399,392 @@ async def toggle_dnat_rule(uuid: str, enabled: bool) -> dict:
             }
     except Exception as e:
         return _error(f"Failed to toggle DNAT rule: {_fmt_exc(e)}")
+
+
+# --- Security monitoring tools ---
+
+
+# Pattern matching audit-log lines like:
+#   /index.php: Successful login for user 'vince.ciganik' from: 10.216.1.18
+#   /index.php: Failed login for user 'X' from: 1.2.3.4
+#   /index.php: Failed login attempt for unknown user 'X' from: 1.2.3.4
+_LOGIN_RE = re.compile(
+    r"(?P<result>Successful|Failed)\s+login(?:\s+attempt)?"
+    r"\s+for\s+(?:unknown\s+)?user\s+'(?P<user>[^']*)'"
+    r"\s+from:\s*(?P<ip>\S+)"
+)
+
+
+def _parse_filter_log(rows: list[dict]) -> list[dict]:
+    """Parse OPNsense filterlog CSV lines into structured dicts.
+
+    The OPNsense filter log uses comma-separated fields; layout depends on IP
+    version and protocol. We handle the common case (IPv4 + TCP/UDP/ICMP) and
+    skip entries we can't parse cleanly.
+
+    Reference layout (IPv4):
+      0=rule_num, 1=sub_rule, 2=anchor, 3=tracker, 4=interface, 5=reason,
+      6=action, 7=direction, 8=ip_ver, 9=tos, 10=ecn, 11=ttl, 12=id, 13=offset,
+      14=flags, 15=proto_id, 16=proto_text, 17=length, 18=src_ip, 19=dst_ip,
+      20=src_port (tcp/udp), 21=dst_port (tcp/udp)
+    """
+    parsed = []
+    for row in rows:
+        line = (row.get("line") or "").strip()
+        if not line:
+            continue
+        parts = line.split(",")
+        if len(parts) < 18:
+            continue
+        try:
+            ip_ver = parts[8]
+            if ip_ver != "4":
+                # IPv6 layout differs; skipping for now (rare on home WANs)
+                continue
+            proto = parts[16] if len(parts) > 16 else ""
+            entry = {
+                "timestamp": row.get("timestamp"),
+                "interface": parts[4] or None,
+                "action": parts[6] or None,
+                "direction": parts[7] or None,
+                "proto": proto or None,
+                "src_ip": parts[18] if len(parts) > 18 else None,
+                "dst_ip": parts[19] if len(parts) > 19 else None,
+                "src_port": (
+                    parts[20] if len(parts) > 20 and proto in ("tcp", "udp") else None
+                ),
+                "dst_port": (
+                    parts[21] if len(parts) > 21 and proto in ("tcp", "udp") else None
+                ),
+                "rule_id": parts[0] or None,
+            }
+            parsed.append(entry)
+        except (IndexError, ValueError):
+            continue
+    return parsed
+
+
+@mcp.tool()
+async def get_services() -> dict:
+    """List all OPNsense services with their running state.
+
+    Highlights any service that is currently stopped — useful for catching
+    crashed daemons (Unbound, dhcpd, configd, etc.) without trawling logs.
+    """
+    try:
+        data = await _get("/core/service/search")
+        rows = data.get("rows", []) if isinstance(data, dict) else []
+        running = [r for r in rows if r.get("running")]
+        stopped = [r for r in rows if not r.get("running")]
+        return {
+            "total": len(rows),
+            "running_count": len(running),
+            "stopped_count": len(stopped),
+            "stopped_services": [
+                {
+                    "name": s.get("name"),
+                    "description": s.get("description"),
+                    "id": s.get("id"),
+                }
+                for s in stopped
+            ],
+            "all_services": rows,
+        }
+    except Exception as e:
+        return _error(f"Failed to get services: {_fmt_exc(e)}")
+
+
+@mcp.tool()
+async def get_updates_available(refresh: bool = False) -> dict:
+    """Check for pending OPNsense and package updates.
+
+    Reads the cached firmware status (last refresh timestamp included). If
+    refresh=True, triggers a fresh check on the firewall first; the check is
+    asynchronous on the OPNsense side, so the returned status may still
+    reflect a previous run if the new check hasn't completed.
+    """
+    try:
+        if refresh:
+            try:
+                await _post("/core/firmware/check")
+                # Brief grace period; the actual check runs in background.
+                import asyncio
+
+                await asyncio.sleep(3)
+            except Exception:
+                pass
+
+        status: Any = await _get("/core/firmware/status")
+        if not isinstance(status, dict):
+            return _error("Unexpected firmware status response shape")
+
+        upgrade_packages = status.get("upgrade_packages", []) or []
+        new_packages = status.get("new_packages", []) or []
+        reinstall_packages = status.get("reinstall_packages", []) or []
+        remove_packages = status.get("remove_packages", []) or []
+
+        return {
+            "updates_available": status.get("status") == "ok",
+            "status_msg": status.get("status_msg"),
+            "last_check": status.get("last_check"),
+            "current_version": status.get("product_version"),
+            "needs_reboot": status.get("upgrade_needs_reboot") in ("1", 1, True),
+            "download_size": status.get("download_size"),
+            "package_counts": {
+                "upgrade": len(upgrade_packages),
+                "new": len(new_packages),
+                "reinstall": len(reinstall_packages),
+                "remove": len(remove_packages),
+            },
+            "upgrade_packages": upgrade_packages,
+            "new_packages": new_packages,
+            "reinstall_packages": reinstall_packages,
+            "remove_packages": remove_packages,
+            "upgrade_major_version": status.get("upgrade_major_version") or "",
+            "upgrade_major_message": status.get("upgrade_major_message") or "",
+        }
+    except Exception as e:
+        return _error(f"Failed to get update status: {_fmt_exc(e)}")
+
+
+async def _scan_audit_logins(limit: int) -> tuple[list[dict], list[dict]]:
+    """Fetch recent UI login attempts from the audit log.
+
+    Uses server-side search filter so chatty configd entries (which dominate
+    the audit log on busy systems) don't push login records out of the window.
+    Returns (successful, failed) lists.
+    """
+    raw = await _fetch_log("audit", limit=limit, search="login")
+    rows = raw.get("rows", []) if isinstance(raw, dict) else []
+    successful: list[dict] = []
+    failed: list[dict] = []
+    for row in rows:
+        line = row.get("line") or ""
+        m = _LOGIN_RE.search(line)
+        if not m:
+            continue
+        entry = {
+            "timestamp": row.get("timestamp"),
+            "user": m.group("user"),
+            "source_ip": m.group("ip"),
+        }
+        (successful if m.group("result") == "Successful" else failed).append(entry)
+    return successful, failed
+
+
+async def _scan_audit_denied(limit: int) -> list[dict]:
+    """Fetch denied configd admin actions (privilege-probe signal)."""
+    raw = await _fetch_log("audit", limit=limit, search="denied")
+    rows = raw.get("rows", []) if isinstance(raw, dict) else []
+    denied: list[dict] = []
+    for row in rows:
+        line = (row.get("line") or "").strip()
+        if not line.startswith("action denied"):
+            continue
+        parts = line.split()
+        action_name = parts[2] if len(parts) > 2 else None
+        user = parts[-1] if len(parts) >= 6 and parts[-2] == "user" else None
+        denied.append(
+            {
+                "timestamp": row.get("timestamp"),
+                "action": action_name,
+                "user": user,
+                "line": line,
+            }
+        )
+    return denied
+
+
+@mcp.tool()
+async def get_auth_events(limit: int = 200) -> dict:
+    """Recent UI login attempts (success and failure) plus denied admin actions.
+
+    Pulls from the audit log via two server-filtered queries (one for "login",
+    one for "denied") so chatty configd action-allowed entries don't crowd out
+    the records we actually care about.
+
+    Returns counts, recent exemplars, and top source IPs of failed logins.
+    """
+    try:
+        successful, failed = await _scan_audit_logins(limit)
+        denied_actions = await _scan_audit_denied(limit)
+
+        failed_by_ip = collections.Counter(
+            e["source_ip"] for e in failed if e.get("source_ip")
+        )
+        successful_users = sorted({e["user"] for e in successful if e.get("user")})
+
+        return {
+            "successful_count": len(successful),
+            "failed_count": len(failed),
+            "denied_action_count": len(denied_actions),
+            "successful_users": successful_users,
+            "top_failed_source_ips": [
+                {"ip": ip, "count": c} for ip, c in failed_by_ip.most_common(10)
+            ],
+            "recent_failed": failed[:20],
+            "recent_denied_actions": denied_actions[:20],
+            "recent_successful": successful[:10],
+            "window_size": limit,
+        }
+    except Exception as e:
+        return _error(f"Failed to get auth events: {_fmt_exc(e)}")
+
+
+@mcp.tool()
+async def get_firewall_blocks(limit: int = 500, top_n: int = 10) -> dict:
+    """Aggregate recent pf block events: top source IPs, top destination ports.
+
+    Pulls the most recent `limit` filterlog entries, parses CSV, isolates
+    action=block, and returns digest counts plus top-N attackers/targets.
+    Use this to spot port scans, brute-force probes, or scripted floods that
+    don't show up anywhere else.
+    """
+    try:
+        raw = await _fetch_log("firewall", limit=limit)
+        rows = raw.get("rows", []) if isinstance(raw, dict) else []
+        parsed = _parse_filter_log(rows)
+        blocks = [e for e in parsed if e.get("action") == "block"]
+        passes = [e for e in parsed if e.get("action") == "pass"]
+
+        by_src = collections.Counter(e["src_ip"] for e in blocks if e.get("src_ip"))
+        by_dst_port = collections.Counter(
+            f"{e['dst_port']}/{e['proto']}"
+            for e in blocks
+            if e.get("dst_port") and e.get("proto")
+        )
+        by_interface = collections.Counter(
+            e["interface"] for e in blocks if e.get("interface")
+        )
+
+        return {
+            "window_lines": len(rows),
+            "parsed_v4_count": len(parsed),
+            "block_count": len(blocks),
+            "pass_count": len(passes),
+            "top_source_ips": [
+                {"ip": ip, "count": c} for ip, c in by_src.most_common(top_n)
+            ],
+            "top_dest_ports": [
+                {"port": p, "count": c} for p, c in by_dst_port.most_common(top_n)
+            ],
+            "by_interface": [
+                {"interface": i, "count": c} for i, c in by_interface.most_common()
+            ],
+            "recent_blocks": blocks[:20],
+        }
+    except Exception as e:
+        return _error(f"Failed to get firewall blocks: {_fmt_exc(e)}")
+
+
+@mcp.tool()
+async def get_security_digest(window_lines: int = 500) -> dict:
+    """Compact security overview — the primary 'is anything wrong?' call.
+
+    Aggregates auth attempts, denied admin actions, firewall blocks, service
+    health, and pending updates into one response. Returns counts plus a few
+    exemplars (no raw log dumps), and a 'warnings' list highlighting anything
+    that looks anomalous so callers can fast-path on len(warnings) > 0.
+
+    `window_lines` controls how deep into the audit / filter log we sweep
+    (default 500). Larger windows catch slower-burning patterns at the cost
+    of more API work.
+    """
+    digest: dict[str, Any] = {"warnings": [], "info": {}}
+
+    # --- Auth events ---
+    try:
+        successful, failed = await _scan_audit_logins(window_lines)
+        denied = await _scan_audit_denied(window_lines)
+        failed_by_ip = collections.Counter(
+            e["source_ip"] for e in failed if e.get("source_ip")
+        )
+        digest["info"]["auth"] = {
+            "successful_count": len(successful),
+            "failed_count": len(failed),
+            "successful_users": sorted({e["user"] for e in successful if e.get("user")}),
+            "denied_admin_actions": len(denied),
+            "top_failed_ips": [
+                {"ip": ip, "count": c} for ip, c in failed_by_ip.most_common(5)
+            ],
+        }
+        if failed:
+            digest["warnings"].append(
+                f"{len(failed)} failed UI login attempt(s) in window"
+            )
+        if denied:
+            digest["warnings"].append(
+                f"{len(denied)} denied admin action(s) in window (possible privilege probe)"
+            )
+    except Exception as e:
+        digest["info"]["auth"] = {"error": _fmt_exc(e)}
+
+    # --- Firewall blocks ---
+    try:
+        raw = await _fetch_log("firewall", limit=window_lines)
+        rows = raw.get("rows", []) if isinstance(raw, dict) else []
+        parsed = _parse_filter_log(rows)
+        blocks = [e for e in parsed if e.get("action") == "block"]
+        by_src = collections.Counter(e["src_ip"] for e in blocks if e.get("src_ip"))
+        digest["info"]["firewall"] = {
+            "block_count": len(blocks),
+            "pass_count": sum(1 for e in parsed if e.get("action") == "pass"),
+            "top_blocked_sources": [
+                {"ip": ip, "count": c} for ip, c in by_src.most_common(5)
+            ],
+        }
+        # 50 blocks/window (default 500 lines) ≈ 10% block rate — flag higher.
+        if len(blocks) >= 50:
+            digest["warnings"].append(
+                f"{len(blocks)} firewall blocks in window (possible scan/flood)"
+            )
+    except Exception as e:
+        digest["info"]["firewall"] = {"error": _fmt_exc(e)}
+
+    # --- Service health ---
+    try:
+        svc = await _get("/core/service/search")
+        rows = svc.get("rows", []) if isinstance(svc, dict) else []
+        stopped = [
+            {"name": s.get("name"), "description": s.get("description")}
+            for s in rows
+            if not s.get("running")
+        ]
+        digest["info"]["services"] = {
+            "total": len(rows),
+            "stopped_count": len(stopped),
+            "stopped": stopped,
+        }
+        if stopped:
+            digest["warnings"].append(
+                f"{len(stopped)} service(s) not running: "
+                + ", ".join(s["name"] or "?" for s in stopped[:5])
+            )
+    except Exception as e:
+        digest["info"]["services"] = {"error": _fmt_exc(e)}
+
+    # --- Updates ---
+    try:
+        status: Any = await _get("/core/firmware/status")
+        if isinstance(status, dict):
+            available = status.get("status") == "ok"
+            digest["info"]["updates"] = {
+                "available": available,
+                "status_msg": status.get("status_msg"),
+                "current_version": status.get("product_version"),
+                "last_check": status.get("last_check"),
+                "package_count": len(status.get("upgrade_packages", []) or [])
+                + len(status.get("new_packages", []) or []),
+            }
+            if available:
+                digest["warnings"].append("Pending OPNsense / package updates")
+        else:
+            digest["info"]["updates"] = {"error": "unexpected response"}
+    except Exception as e:
+        digest["info"]["updates"] = {"error": _fmt_exc(e)}
+
+    digest["status"] = "ok" if not digest["warnings"] else "warnings"
+    return digest
 
 
 if __name__ == "__main__":

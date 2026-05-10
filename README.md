@@ -4,23 +4,50 @@ An MCP server for monitoring an OPNsense firewall via its REST API. Primarily re
 
 ## Tools
 
+### Status & inventory
+
 | Tool | Description |
 |------|-------------|
 | `get_system_status` | Firmware version, uptime, CPU, memory, disk, temperature |
+| `get_services` | All services with running/stopped state; highlights any stopped daemons |
+| `get_updates_available` | Pending OPNsense / package updates (status, packages, reboot needed) |
 | `get_interfaces` | All interfaces with status, IP, MAC, traffic counters |
 | `get_gateway_status` | Gateways with status, RTT, packet loss |
 | `get_dhcp_leases` | Active DHCP leases |
+| `get_arp_table` | ARP table entries |
+
+### Security monitoring
+
+| Tool | Description |
+|------|-------------|
+| `get_security_digest` | **Primary "is anything wrong?" call.** Aggregates failed logins, denied admin actions, firewall blocks, service health, pending updates into one compact response with a `warnings` list. |
+| `get_auth_events` | Recent UI login attempts (success / failed / denied admin actions) with top source IPs of failures |
+| `get_firewall_blocks` | Aggregated pf block events: top source IPs, top destination ports, sample entries — for spotting scans / brute-force probes |
+
+### Firewall & NAT
+
+| Tool | Description |
+|------|-------------|
 | `get_firewall_rules` | All firewall filter rules |
-| `get_log` | Recent log entries from any source: `firewall` (pf rule hits), `audit`, `configd`, `kernel`, `resolver`, `routing`, `ipsec`, `openvpn`, `wireguard`, `dhcpd`, etc. Filterable by severity and free-text search. |
 | `get_dnat_rules` | Destination NAT (port-forward) rules |
 | `get_snat_rules` | Source NAT (outbound) rules |
 | `toggle_dnat_rule` | Enable/disable a DNAT rule by UUID (anti-lockout rules protected) |
+
+### VPN & networking
+
+| Tool | Description |
+|------|-------------|
 | `get_wireguard_status` | WireGuard instances and peers |
-| `get_arp_table` | ARP table entries |
-| `get_unbound_stats` | Unbound DNS resolver statistics |
-| `ping_host` | Ping a host from OPNsense |
 | `get_openvpn_status` | OpenVPN server/client status |
 | `get_tailscale_status` | Tailscale plugin service status and settings (requires os-tailscale) |
+| `get_unbound_stats` | Unbound DNS resolver statistics |
+| `ping_host` | Ping a host from OPNsense |
+
+### Logs
+
+| Tool | Description |
+|------|-------------|
+| `get_log` | Recent log entries from any source: `firewall` (pf filterlog), `audit`, `configd`, `kernel`, `system`, `resolver`, `routing`, `ipsec`, `openvpn`, `wireguard`, `dhcpd`, etc. Filterable by severity and free-text search. |
 
 ## Setup
 
