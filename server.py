@@ -1,6 +1,7 @@
 """MCP server for read-only OPNsense firewall monitoring."""
 
 import collections
+import ipaddress
 import os
 import re
 import ssl
@@ -415,6 +416,36 @@ _LOGIN_RE = re.compile(
 )
 
 
+def _is_lan_origin(ip: str | None) -> bool:
+    """True if the source IP is in private/loopback/link-local space.
+
+    Used to split firewall blocks by where they came from:
+      - LAN-origin (private src) → almost always state-table churn or local
+        device misconfig; not an attack.
+      - WAN-origin (public src)  → external scans, brute-force probes, real
+        attack signal.
+
+    The digest's "possible scan/flood" warning thresholds only on WAN-origin
+    blocks so a routine state-table flush after a config reload doesn't
+    trigger a false alarm from chatty LAN devices retransmitting orphaned
+    FIN/PSH packets.
+    """
+    if not ip:
+        return False
+    try:
+        addr = ipaddress.ip_address(ip)
+    except (ValueError, TypeError):
+        return False
+    return (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_multicast
+        or addr.is_reserved
+        or addr.is_unspecified
+    )
+
+
 def _parse_filter_log(rows: list[dict]) -> list[dict]:
     """Parse OPNsense filterlog CSV lines into structured dicts.
 
@@ -636,9 +667,16 @@ async def get_firewall_blocks(limit: int = 500, top_n: int = 10) -> dict:
     """Aggregate recent pf block events: top source IPs, top destination ports.
 
     Pulls the most recent `limit` filterlog entries, parses CSV, isolates
-    action=block, and returns digest counts plus top-N attackers/targets.
-    Use this to spot port scans, brute-force probes, or scripted floods that
-    don't show up anywhere else.
+    action=block, and splits results by source-IP origin:
+
+      - **WAN-origin** (public source IP) — external scans, brute-force probes,
+        real attack signal
+      - **LAN-origin** (private source IP) — almost always pf state-table churn
+        from idle/restart-orphaned TCP sessions trying to close gracefully;
+        cosmetic noise, not an attack
+
+    Top-N rankings are computed for the WAN-origin set so legitimate attack
+    sources don't get crowded out by chatty LAN devices.
     """
     try:
         raw = await _fetch_log("firewall", limit=limit)
@@ -647,20 +685,30 @@ async def get_firewall_blocks(limit: int = 500, top_n: int = 10) -> dict:
         blocks = [e for e in parsed if e.get("action") == "block"]
         passes = [e for e in parsed if e.get("action") == "pass"]
 
-        by_src = collections.Counter(e["src_ip"] for e in blocks if e.get("src_ip"))
+        wan_blocks = [e for e in blocks if not _is_lan_origin(e.get("src_ip"))]
+        lan_blocks = [e for e in blocks if _is_lan_origin(e.get("src_ip"))]
+
+        by_src = collections.Counter(
+            e["src_ip"] for e in wan_blocks if e.get("src_ip")
+        )
         by_dst_port = collections.Counter(
             f"{e['dst_port']}/{e['proto']}"
-            for e in blocks
+            for e in wan_blocks
             if e.get("dst_port") and e.get("proto")
         )
         by_interface = collections.Counter(
             e["interface"] for e in blocks if e.get("interface")
+        )
+        lan_top_src = collections.Counter(
+            e["src_ip"] for e in lan_blocks if e.get("src_ip")
         )
 
         return {
             "window_lines": len(rows),
             "parsed_v4_count": len(parsed),
             "block_count": len(blocks),
+            "wan_origin_count": len(wan_blocks),
+            "lan_origin_count": len(lan_blocks),
             "pass_count": len(passes),
             "top_source_ips": [
                 {"ip": ip, "count": c} for ip, c in by_src.most_common(top_n)
@@ -670,6 +718,9 @@ async def get_firewall_blocks(limit: int = 500, top_n: int = 10) -> dict:
             ],
             "by_interface": [
                 {"interface": i, "count": c} for i, c in by_interface.most_common()
+            ],
+            "lan_origin_top_sources": [
+                {"ip": ip, "count": c} for ip, c in lan_top_src.most_common(top_n)
             ],
             "recent_blocks": blocks[:20],
         }
@@ -725,18 +776,28 @@ async def get_security_digest(window_lines: int = 500) -> dict:
         rows = raw.get("rows", []) if isinstance(raw, dict) else []
         parsed = _parse_filter_log(rows)
         blocks = [e for e in parsed if e.get("action") == "block"]
-        by_src = collections.Counter(e["src_ip"] for e in blocks if e.get("src_ip"))
+        wan_blocks = [e for e in blocks if not _is_lan_origin(e.get("src_ip"))]
+        lan_blocks = [e for e in blocks if _is_lan_origin(e.get("src_ip"))]
+        wan_by_src = collections.Counter(
+            e["src_ip"] for e in wan_blocks if e.get("src_ip")
+        )
         digest["info"]["firewall"] = {
             "block_count": len(blocks),
+            "wan_origin_count": len(wan_blocks),
+            "lan_origin_count": len(lan_blocks),
             "pass_count": sum(1 for e in parsed if e.get("action") == "pass"),
-            "top_blocked_sources": [
-                {"ip": ip, "count": c} for ip, c in by_src.most_common(5)
+            "top_blocked_sources_wan": [
+                {"ip": ip, "count": c} for ip, c in wan_by_src.most_common(5)
             ],
         }
-        # 50 blocks/window (default 500 lines) ≈ 10% block rate — flag higher.
-        if len(blocks) >= 50:
+        # Threshold on WAN-origin blocks only. LAN-origin blocks are nearly
+        # always pf state-table churn (orphaned FIN/PSH packets after a
+        # config reload or session timeout) — cosmetic noise, not an attack.
+        # WAN-origin blocks at >= 50/window indicate active scan/flood.
+        if len(wan_blocks) >= 50:
             digest["warnings"].append(
-                f"{len(blocks)} firewall blocks in window (possible scan/flood)"
+                f"{len(wan_blocks)} WAN-origin firewall blocks in window "
+                "(possible scan/flood)"
             )
     except Exception as e:
         digest["info"]["firewall"] = {"error": _fmt_exc(e)}
