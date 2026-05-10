@@ -92,7 +92,7 @@ async def get_system_status() -> dict:
 
             # System info (uptime, etc.)
             try:
-                r = await client.get("/core/system/systemInformation")
+                r = await client.get("/diagnostics/system/system_information")
                 r.raise_for_status()
                 results["system_info"] = r.json()
             except Exception as e:
@@ -100,7 +100,7 @@ async def get_system_status() -> dict:
 
             # Temperature (HAProxy health or system temps)
             try:
-                r = await client.get("/diagnostics/system/systemTemperature")
+                r = await client.get("/diagnostics/system/system_temperature")
                 r.raise_for_status()
                 results["temperature"] = r.json()
             except Exception:
