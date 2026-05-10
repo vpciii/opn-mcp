@@ -132,6 +132,12 @@ Pass `--sse` to use SSE transport instead of stdio.
 claude mcp add opnsense http://localhost:8000/sse
 ```
 
+## Hands-off monitoring
+
+The point of `get_security_digest` is to enable autonomous monitoring — a scheduled Claude Code agent that runs the digest on a cron, classifies findings by severity, and pushes notifications to your phone via Home Assistant when something matters.
+
+See **[docs/MONITORING.md](docs/MONITORING.md)** for the full setup: architecture, severity tiers, scheduled-task prompt templates, prerequisites (user-scope MCP, `--init`, permission allow-list), and troubleshooting.
+
 ## Notes
 
 - Most tools are **read-only** — the only write operation is `toggle_dnat_rule`, which can enable/disable existing DNAT rules
