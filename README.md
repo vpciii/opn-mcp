@@ -107,3 +107,17 @@ claude mcp add opnsense http://localhost:8000/sse
 - SSL verification is configurable via `OPNSENSE_VERIFY_SSL` (set to `false` for self-signed certs)
 - The server defaults to stdio transport (for Claude Desktop via Docker), pass `--sse` for remote access
 - Some endpoints may not be available depending on your OPNsense version and installed plugins
+
+## Troubleshooting
+
+### `Invalid port: '<ipv6-fragment>'` on macOS with OrbStack
+
+If you see an httpx `Invalid port` error referencing an IPv6 fragment (e.g. `b51a:cc66:f0::`), it's coming from OrbStack injecting an unbracketed IPv6 CIDR into `NO_PROXY` (its default subnet is `fd07:b51a:cc66:f0::/64`). httpx's URL parser splits on `:` and treats the trailing hex groups as a port.
+
+The server already mitigates this by passing `trust_env=False` to httpx so proxy env vars are ignored — the OPNsense API is on the LAN and shouldn't be proxied anyway. If you still hit this after pulling the latest code, **rebuild the Docker image** so the running container picks up the fix:
+
+```bash
+docker build -t opn-mcp .
+```
+
+Then restart Claude Desktop (or your MCP host) so the container respawns from the new image.
