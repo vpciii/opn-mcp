@@ -61,6 +61,13 @@ def _error(msg: str) -> dict:
     return {"error": msg}
 
 
+def _fmt_exc(e: BaseException) -> str:
+    """Format an exception with its type so empty-message errors are still useful."""
+    msg = str(e).strip()
+    type_name = type(e).__name__
+    return f"{type_name}: {msg}" if msg else type_name
+
+
 # --- Tools ---
 
 
@@ -83,7 +90,7 @@ async def get_system_status() -> dict:
                     "os_version": fw.get("os_version"),
                 }
             except Exception as e:
-                results["firmware"] = _error(str(e))
+                results["firmware"] = _error(_fmt_exc(e))
 
             # System resources via activity endpoint
             try:
@@ -93,7 +100,7 @@ async def get_system_status() -> dict:
                 headers = activity.get("headers", "")
                 results["activity_summary"] = headers
             except Exception as e:
-                results["activity"] = _error(str(e))
+                results["activity"] = _error(_fmt_exc(e))
 
             # System info (uptime, etc.)
             try:
@@ -101,7 +108,7 @@ async def get_system_status() -> dict:
                 r.raise_for_status()
                 results["system_info"] = r.json()
             except Exception as e:
-                results["system_info"] = _error(str(e))
+                results["system_info"] = _error(_fmt_exc(e))
 
             # Temperature (HAProxy health or system temps)
             try:
@@ -113,7 +120,7 @@ async def get_system_status() -> dict:
 
         return results
     except Exception as e:
-        return _error(f"Failed to get system status: {e}")
+        return _error(f"Failed to get system status: {_fmt_exc(e)}")
 
 
 @mcp.tool()
@@ -123,7 +130,7 @@ async def get_interfaces() -> dict:
         data = await _get("/diagnostics/interface/getInterfaceStatistics")
         return data
     except Exception as e:
-        return _error(f"Failed to get interfaces: {e}")
+        return _error(f"Failed to get interfaces: {_fmt_exc(e)}")
 
 
 @mcp.tool()
@@ -133,7 +140,7 @@ async def get_gateway_status() -> dict:
         data = await _post("/routes/gateway/status")
         return data
     except Exception as e:
-        return _error(f"Failed to get gateway status: {e}")
+        return _error(f"Failed to get gateway status: {_fmt_exc(e)}")
 
 
 @mcp.tool()
@@ -151,7 +158,7 @@ async def get_dhcp_leases() -> dict:
         data = await _get("/dhcpv4/service/searchLease")
         return data
     except Exception as e:
-        return _error(f"Failed to get DHCP leases: {e}")
+        return _error(f"Failed to get DHCP leases: {_fmt_exc(e)}")
 
 
 LOG_SOURCES = {
@@ -211,7 +218,7 @@ async def get_log(
             resp.raise_for_status()
             return resp.json()
     except Exception as e:
-        return _error(f"Failed to get '{source}' log: {e}")
+        return _error(f"Failed to get '{source}' log: {_fmt_exc(e)}")
 
 
 @mcp.tool()
@@ -221,7 +228,7 @@ async def get_wireguard_status() -> dict:
         data = await _get("/wireguard/service/show")
         return data
     except Exception as e:
-        return _error(f"Failed to get WireGuard status: {e}")
+        return _error(f"Failed to get WireGuard status: {_fmt_exc(e)}")
 
 
 @mcp.tool()
@@ -231,17 +238,19 @@ async def get_arp_table() -> dict:
         data = await _get("/diagnostics/interface/getArp")
         return data
     except Exception as e:
-        return _error(f"Failed to get ARP table: {e}")
+        return _error(f"Failed to get ARP table: {_fmt_exc(e)}")
 
 
 @mcp.tool()
 async def get_unbound_stats() -> dict:
     """Get Unbound DNS resolver statistics including cache hits, misses, and query counts."""
     try:
-        data = await _post("/unbound/service/dnsStats")
+        # Current API path (OPNsense >= 23.1). The legacy /unbound/service/dnsStats
+        # was removed; stats now live under the diagnostics controller.
+        data = await _get("/unbound/diagnostics/stats")
         return data
     except Exception as e:
-        return _error(f"Failed to get Unbound stats: {e}")
+        return _error(f"Failed to get Unbound stats: {_fmt_exc(e)}")
 
 
 @mcp.tool()
@@ -256,7 +265,7 @@ async def ping_host(target: str, count: int = 3) -> dict:
             resp.raise_for_status()
             return resp.json()
     except Exception as e:
-        return _error(f"Failed to ping {target}: {e}")
+        return _error(f"Failed to ping {target}: {_fmt_exc(e)}")
 
 
 @mcp.tool()
@@ -272,7 +281,7 @@ async def get_openvpn_status() -> dict:
                 r.raise_for_status()
                 results["sessions"] = r.json()
             except Exception as e:
-                results["sessions"] = _error(str(e))
+                results["sessions"] = _error(_fmt_exc(e))
 
             # OpenVPN instances
             try:
@@ -280,11 +289,11 @@ async def get_openvpn_status() -> dict:
                 r.raise_for_status()
                 results["instances"] = r.json()
             except Exception as e:
-                results["instances"] = _error(str(e))
+                results["instances"] = _error(_fmt_exc(e))
 
         return results
     except Exception as e:
-        return _error(f"Failed to get OpenVPN status: {e}")
+        return _error(f"Failed to get OpenVPN status: {_fmt_exc(e)}")
 
 
 @mcp.tool()
@@ -299,18 +308,18 @@ async def get_tailscale_status() -> dict:
                 r.raise_for_status()
                 results["service"] = r.json()
             except Exception as e:
-                results["service"] = _error(str(e))
+                results["service"] = _error(_fmt_exc(e))
 
             try:
                 r = await client.get("/tailscale/settings/get")
                 r.raise_for_status()
                 results["settings"] = r.json()
             except Exception as e:
-                results["settings"] = _error(str(e))
+                results["settings"] = _error(_fmt_exc(e))
 
         return results
     except Exception as e:
-        return _error(f"Failed to get Tailscale status: {e}")
+        return _error(f"Failed to get Tailscale status: {_fmt_exc(e)}")
 
 
 @mcp.tool()
@@ -320,7 +329,7 @@ async def get_firewall_rules() -> dict:
         data = await _get("/firewall/filter/searchRule")
         return data
     except Exception as e:
-        return _error(f"Failed to get firewall rules: {e}")
+        return _error(f"Failed to get firewall rules: {_fmt_exc(e)}")
 
 
 @mcp.tool()
@@ -330,7 +339,7 @@ async def get_dnat_rules() -> dict:
         data = await _get("/firewall/d_nat/searchRule")
         return data
     except Exception as e:
-        return _error(f"Failed to get DNAT rules: {e}")
+        return _error(f"Failed to get DNAT rules: {_fmt_exc(e)}")
 
 
 @mcp.tool()
@@ -340,7 +349,7 @@ async def get_snat_rules() -> dict:
         data = await _get("/firewall/source_nat/searchRule")
         return data
     except Exception as e:
-        return _error(f"Failed to get SNAT rules: {e}")
+        return _error(f"Failed to get SNAT rules: {_fmt_exc(e)}")
 
 
 @mcp.tool()
@@ -376,7 +385,7 @@ async def toggle_dnat_rule(uuid: str, enabled: bool) -> dict:
                 "status": "enabled" if enabled else "disabled",
             }
     except Exception as e:
-        return _error(f"Failed to toggle DNAT rule: {e}")
+        return _error(f"Failed to toggle DNAT rule: {_fmt_exc(e)}")
 
 
 if __name__ == "__main__":
