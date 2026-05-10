@@ -33,6 +33,11 @@ def _client() -> httpx.AsyncClient:
         auth=(OPNSENSE_API_KEY, OPNSENSE_API_SECRET),
         verify=verify,
         timeout=30.0,
+        # Ignore HTTP(S)_PROXY / NO_PROXY env vars. The OPNsense API is on the
+        # LAN and shouldn't be routed through a proxy. This also avoids httpx
+        # choking on unbracketed IPv6 CIDRs in NO_PROXY (e.g. those injected
+        # by OrbStack), which raise "Invalid port" during client construction.
+        trust_env=False,
     )
 
 
