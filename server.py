@@ -5,6 +5,7 @@ import ipaddress
 import os
 import re
 import ssl
+import time
 from typing import Any
 
 import httpx
@@ -844,8 +845,261 @@ async def get_security_digest(window_lines: int = 500) -> dict:
     except Exception as e:
         digest["info"]["updates"] = {"error": _fmt_exc(e)}
 
+    # --- Certificates ---
+    try:
+        cert_summary = await _check_certs()
+        digest["info"]["certificates"] = cert_summary
+        for c in cert_summary.get("expiring_soon", []):
+            digest["warnings"].append(
+                f"Certificate '{c['descr']}' expires in {c['days_until_expiry']}d"
+            )
+        for c in cert_summary.get("expired_in_use", []):
+            digest["warnings"].append(
+                f"Certificate '{c['descr']}' is EXPIRED and in use"
+            )
+    except Exception as e:
+        digest["info"]["certificates"] = {"error": _fmt_exc(e)}
+
+    # --- PF state table ---
+    try:
+        st = await _get("/diagnostics/firewall/pf_states")
+        if isinstance(st, dict):
+            current = int(st.get("current", 0) or 0)
+            limit = int(st.get("limit", 0) or 0)
+            pct = round(current / limit * 100, 2) if limit else None
+            digest["info"]["pf_states"] = {
+                "current": current,
+                "limit": limit,
+                "percent_used": pct,
+            }
+            if pct is not None and pct >= 80:
+                digest["warnings"].append(
+                    f"pf state table {pct}% full ({current}/{limit}) — "
+                    "possible DDoS or NAT exhaustion"
+                )
+    except Exception as e:
+        digest["info"]["pf_states"] = {"error": _fmt_exc(e)}
+
+    # --- Recent config changes (informational) ---
+    try:
+        changes = await _count_config_changes(window_lines)
+        digest["info"]["config_changes"] = changes
+        # Informational only — we can't know what's authorized. Surface count
+        # so the user can compare against their own activity.
+    except Exception as e:
+        digest["info"]["config_changes"] = {"error": _fmt_exc(e)}
+
     digest["status"] = "ok" if not digest["warnings"] else "warnings"
     return digest
+
+
+# --- Pass 2: cert, state-table, talker, routing tools ---
+
+
+async def _check_certs(near_expiry_days: int = 30) -> dict:
+    """Fetch all certs, classify by status. Returns counts + flagged subsets.
+
+    Status categories (per cert):
+      - ok        : in_use or not, valid for >= near_expiry_days
+      - warning   : in_use AND days_until_expiry < near_expiry_days
+      - expired   : valid_to < now (expired)
+      - inactive  : in_use=0 (regardless of expiry — informational)
+
+    The digest only warns on in-use+near-expiry or in-use+expired.
+    """
+    raw = await _get("/trust/cert/search")
+    rows = raw.get("rows", []) if isinstance(raw, dict) else []
+    now = time.time()
+    summary: list[dict] = []
+    expiring_soon: list[dict] = []
+    expired_in_use: list[dict] = []
+    for r in rows:
+        try:
+            valid_to = int(r.get("valid_to", 0) or 0)
+        except (ValueError, TypeError):
+            valid_to = 0
+        try:
+            valid_from = int(r.get("valid_from", 0) or 0)
+        except (ValueError, TypeError):
+            valid_from = 0
+        in_use = str(r.get("in_use", "0")) == "1"
+        days_left = int((valid_to - now) // 86400) if valid_to else None
+
+        entry = {
+            "uuid": r.get("uuid"),
+            "descr": r.get("descr") or r.get("commonname"),
+            "commonname": r.get("commonname"),
+            "in_use": in_use,
+            "valid_from_epoch": valid_from or None,
+            "valid_to_epoch": valid_to or None,
+            "days_until_expiry": days_left,
+            "expired": days_left is not None and days_left < 0,
+        }
+        summary.append(entry)
+        if in_use:
+            if entry["expired"]:
+                expired_in_use.append(entry)
+            elif days_left is not None and 0 <= days_left < near_expiry_days:
+                expiring_soon.append(entry)
+
+    return {
+        "total": len(summary),
+        "in_use_count": sum(1 for c in summary if c["in_use"]),
+        "expired_in_use": expired_in_use,
+        "expiring_soon": expiring_soon,
+        "near_expiry_threshold_days": near_expiry_days,
+        "all_certs": summary,
+    }
+
+
+async def _count_config_changes(window_lines: int) -> dict:
+    """Count config-event entries in the recent system log."""
+    raw = await _fetch_log("system", limit=window_lines, search="config-event: new_config")
+    rows = raw.get("rows", []) if isinstance(raw, dict) else []
+    timestamps = [r.get("timestamp") for r in rows if r.get("timestamp")]
+    return {
+        "count": len(rows),
+        "latest_timestamps": timestamps[:10],
+    }
+
+
+@mcp.tool()
+async def get_certificates(near_expiry_days: int = 30) -> dict:
+    """List all stored TLS certificates with expiry status.
+
+    Returns a per-cert summary with `days_until_expiry`, `in_use`, and `expired`
+    flags. Designed for monitoring HTTPS / API certs:
+
+      - `expired_in_use`     — certs currently active that have passed expiry
+      - `expiring_soon`      — certs currently active expiring within
+                               `near_expiry_days` (default 30)
+      - `all_certs`          — full list including inactive on-disk certs
+
+    The PEM body and private key are intentionally omitted to keep responses
+    compact and to avoid sending sensitive material across MCP transports.
+    """
+    try:
+        return await _check_certs(near_expiry_days=near_expiry_days)
+    except Exception as e:
+        return _error(f"Failed to get certificates: {_fmt_exc(e)}")
+
+
+@mcp.tool()
+async def get_pf_states() -> dict:
+    """Get current pf state-table size and capacity.
+
+    Returns:
+      - current / limit / percent_used
+      - status: 'ok' | 'high' (>=70%) | 'critical' (>=90%)
+
+    Sustained high utilization can indicate DDoS, NAT exhaustion, or a
+    runaway internal client opening connections.
+    """
+    try:
+        st = await _get("/diagnostics/firewall/pf_states")
+        if not isinstance(st, dict):
+            return _error("Unexpected pf_states response shape")
+        current = int(st.get("current", 0) or 0)
+        limit = int(st.get("limit", 0) or 0)
+        pct = round(current / limit * 100, 2) if limit else None
+        if pct is None:
+            status = "unknown"
+        elif pct >= 90:
+            status = "critical"
+        elif pct >= 70:
+            status = "high"
+        else:
+            status = "ok"
+        return {
+            "current": current,
+            "limit": limit,
+            "percent_used": pct,
+            "status": status,
+        }
+    except Exception as e:
+        return _error(f"Failed to get pf states: {_fmt_exc(e)}")
+
+
+@mcp.tool()
+async def get_top_talkers(top_n: int = 10) -> dict:
+    """Top bandwidth consumers by interface (LAN + WAN) — useful for spotting
+    exfiltration, crypto miners, or runaway uploads.
+
+    Returns the top `top_n` hosts on each interface ranked by total bit rate
+    (in + out), each with rate breakdowns and remote-peer detail records.
+    """
+    try:
+        results: dict[str, Any] = {}
+        async with _client() as client:
+            for iface in ("lan", "wan"):
+                try:
+                    r = await client.get(f"/diagnostics/traffic/top/{iface}")
+                    r.raise_for_status()
+                    data = r.json()
+                    rows = data.get(iface, {}).get("records", []) if isinstance(data, dict) else []
+                    rows.sort(
+                        key=lambda x: int(x.get("rate_bits", 0) or 0), reverse=True
+                    )
+                    results[iface] = [
+                        {
+                            "address": row.get("address"),
+                            "rate_bits": row.get("rate_bits"),
+                            "rate_bits_in": row.get("rate_bits_in"),
+                            "rate_bits_out": row.get("rate_bits_out"),
+                            "cumulative_bytes": row.get("cumulative_bytes"),
+                            "tags": row.get("tags", []),
+                            "rate_human": row.get("rate"),
+                            "details": [
+                                {
+                                    "address": d.get("address"),
+                                    "rate_bits": d.get("rate_bits"),
+                                    "cumulative_bytes": d.get("cumulative_bytes"),
+                                    "tags": d.get("tags", []),
+                                }
+                                for d in (row.get("details") or [])[:5]
+                            ],
+                        }
+                        for row in rows[:top_n]
+                    ]
+                except Exception as e:
+                    results[iface] = {"error": _fmt_exc(e)}
+        return results
+    except Exception as e:
+        return _error(f"Failed to get top talkers: {_fmt_exc(e)}")
+
+
+@mcp.tool()
+async def get_recent_config_changes(window_lines: int = 500) -> dict:
+    """Recent OPNsense configuration save events.
+
+    Parses the `core/system` log for `config-event: new_config` entries —
+    one per config save. Returns count and most-recent timestamps.
+
+    Each save creates a backup at /conf/backup/config-<epoch>.xml. Patterns
+    to watch for: changes outside maintenance windows, bursts of saves
+    (someone exploring), or saves at unusual times of day.
+    """
+    try:
+        return await _count_config_changes(window_lines)
+    except Exception as e:
+        return _error(f"Failed to get config changes: {_fmt_exc(e)}")
+
+
+@mcp.tool()
+async def get_routes() -> dict:
+    """Current routing table.
+
+    Useful when WireGuard / Tailscale routes look weird, and as a tamper
+    check — unauthorized routes added to a compromised firewall would show
+    up here.
+    """
+    try:
+        data = await _get("/diagnostics/interface/getRoutes")
+        if isinstance(data, list):
+            return {"total": len(data), "routes": data}
+        return {"total": 0, "routes": [], "raw": data}
+    except Exception as e:
+        return _error(f"Failed to get routes: {_fmt_exc(e)}")
 
 
 if __name__ == "__main__":

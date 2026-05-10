@@ -20,9 +20,13 @@ An MCP server for monitoring an OPNsense firewall via its REST API. Primarily re
 
 | Tool | Description |
 |------|-------------|
-| `get_security_digest` | **Primary "is anything wrong?" call.** Aggregates failed logins, denied admin actions, firewall blocks, service health, pending updates into one compact response with a `warnings` list. |
+| `get_security_digest` | **Primary "is anything wrong?" call.** Aggregates failed logins, denied admin actions, firewall blocks, service health, pending updates, certificate expiry, pf state-table utilization, and recent config changes into one compact response with a `warnings` list. |
 | `get_auth_events` | Recent UI login attempts (success / failed / denied admin actions) with top source IPs of failures |
-| `get_firewall_blocks` | Aggregated pf block events: top source IPs, top destination ports, sample entries — for spotting scans / brute-force probes |
+| `get_firewall_blocks` | Aggregated pf block events split by WAN-origin (real attack signal) vs LAN-origin (state-table churn); top source IPs, top destination ports |
+| `get_certificates` | All TLS certs with `days_until_expiry`, `in_use`, and `expired` flags. Flags expired-in-use and expiring-soon (< 30d). |
+| `get_pf_states` | pf state-table size + capacity. Status `ok`/`high` (≥70%) / `critical` (≥90%) for DDoS / NAT-exhaustion detection. |
+| `get_top_talkers` | Top bandwidth consumers per interface (LAN/WAN) with peer details — useful for exfiltration / crypto-miner detection. |
+| `get_recent_config_changes` | Count + timestamps of `config-event: new_config` saves; flags unauthorized config edits when compared against your own activity. |
 
 ### Firewall & NAT
 
@@ -41,6 +45,7 @@ An MCP server for monitoring an OPNsense firewall via its REST API. Primarily re
 | `get_openvpn_status` | OpenVPN server/client status |
 | `get_tailscale_status` | Tailscale plugin service status and settings (requires os-tailscale) |
 | `get_unbound_stats` | Unbound DNS resolver statistics |
+| `get_routes` | Current routing table (catches unauthorized route additions) |
 | `ping_host` | Ping a host from OPNsense |
 
 ### Logs
