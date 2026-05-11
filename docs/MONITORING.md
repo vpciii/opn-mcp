@@ -10,8 +10,8 @@ The end state: you stop checking the firewall manually. Your phone tells you whe
 
 ```
 ┌─────────────────────────┐
-│ Claude Code scheduled   │  cron: */30 * * * *  (security-check)
-│ task (background agent) │  cron: 0 8 * * *     (daily-summary)
+│ Claude Code scheduled   │  cron: 0 * * * *    (security-check, hourly)
+│ task (background agent) │  cron: 0 8 * * *    (daily-summary, 8 AM)
 └────────┬────────────────┘
          │
          │ 1. call get_security_digest
@@ -145,9 +145,9 @@ Note: `ha_call_service` is generic — it can call any HA service. If that scope
 
 Two tasks. Both are Claude Code routines stored in `~/.claude/scheduled-tasks/<taskId>/SKILL.md` (created via `mcp__scheduled-tasks__create_scheduled_task`).
 
-### `opnsense-security-check` — every 30 minutes
+### `opnsense-security-check` — hourly
 
-Cron: `*/30 * * * *` (local time).
+Cron: `0 * * * *` (local time). Initially set to every 30 minutes, then dialed back to hourly after living with it surfaced more LOW-severity noise than useful signal — see the tuning notes below.
 
 **Behavior**: silent on a clean digest. Notify only when `warnings` is non-empty AND severity rules permit (LOW warnings are deferred outside 08:00–23:00).
 
@@ -172,8 +172,8 @@ If you have the `mcp__scheduled-tasks` MCP server set up, you can create them vi
 ```
 Use mcp__scheduled-tasks__create_scheduled_task with:
 - taskId: opnsense-security-check
-- cronExpression: */30 * * * *
-- description: Run get_security_digest every 30 min and push HA mobile notifications for warnings, with severity-tiered quiet hours.
+- cronExpression: 0 * * * *
+- description: Run get_security_digest hourly and push HA mobile notifications for warnings, with severity-tiered quiet hours.
 - prompt: <copy from docs/scheduled-tasks/security-check.md>
 ```
 

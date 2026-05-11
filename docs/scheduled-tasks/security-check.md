@@ -1,11 +1,11 @@
 # `opnsense-security-check` task prompt
 
-Template for the recurring 30-minute security check. Copy this into the `prompt` field when creating the scheduled task via `mcp__scheduled-tasks__create_scheduled_task`.
+Template for the recurring security check. Copy this into the `prompt` field when creating the scheduled task via `mcp__scheduled-tasks__create_scheduled_task`.
 
 **Suggested settings:**
 - `taskId`: `opnsense-security-check`
-- `cronExpression`: `*/30 * * * *`
-- `description`: `Run get_security_digest every 30 min and push HA mobile notifications for warnings, with severity-tiered quiet hours.`
+- `cronExpression`: `0 * * * *` (hourly — drop to `*/30 * * * *` for 30-min cadence, but expect more LOW-tier noise)
+- `description`: `Run get_security_digest hourly and push HA mobile notifications for warnings, with severity-tiered quiet hours.`
 - `notifyOnCompletion`: `false` (we don't want a session ping for every run; the actual notifications go to HA mobile)
 
 ---
@@ -13,7 +13,7 @@ Template for the recurring 30-minute security check. Copy this into the `prompt`
 ```
 Run a security check on the OPNsense firewall and notify if something's wrong.
 
-This task runs every 30 minutes. It should be silent on a clean system and only notify when warnings appear, with severity-tier-based quiet hours.
+This task runs hourly. It should be silent on a clean system and only notify when warnings appear, with severity-tier-based quiet hours.
 
 Each notification has two parts:
 1. A short push to the HA mobile app (one dense line, lock-screen readable)
