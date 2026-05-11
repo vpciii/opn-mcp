@@ -56,7 +56,7 @@ Active attack or breakage signals. Wake the user.
 - Any service reported as not running
 - Any cert flagged as expired-and-in-use
 - Any cert with `days_until_expiry < 7`
-- WAN-origin firewall blocks ≥ 200 in window (real flood)
+- WAN-origin firewall blocks ≥ 500 in window (genuine flood)
 - pf state table at `critical` (≥ 90% full)
 
 ### MEDIUM — notify any time, 24/7
@@ -64,7 +64,7 @@ Active attack or breakage signals. Wake the user.
 Needs attention; not on fire.
 
 - Cert with `7 ≤ days_until_expiry < 30`
-- WAN-origin firewall blocks 100–199 in window
+- WAN-origin firewall blocks 200–499 in window
 - pf state table at `high` (70–90% full)
 
 ### LOW — notify only between 08:00 and 23:00 local
@@ -72,8 +72,11 @@ Needs attention; not on fire.
 Informational; can wait until morning.
 
 - Pending OPNsense / package updates
-- WAN-origin firewall blocks 50–99 in window (low-grade noise)
 - Anything else not matched above
+
+### Suppressed entirely (no notification at any time)
+
+- WAN-origin firewall blocks where count < 200 — baseline internet scan noise (Telnet/SSDP/RDP probes, IoT botnet recon, AWS-hosted UDP scanners). The firewall is correctly blocking it; there's nothing actionable in the moment. The daily summary still reports the count for visibility, so trends remain observable without interruption.
 
 If a run produces only LOW warnings outside waking hours, the task exits silently. The next run after 08:00 will pick them up.
 
@@ -202,8 +205,8 @@ The thresholds picked here suit a single-user home network. Adjust to taste:
 
 | Threshold | Default | Tune up if… | Tune down if… |
 |---|---|---|---|
-| WAN-block LOW floor | 50 | You're getting LOW alerts on baseline internet noise. Raise to 100–150. | You want earlier visibility into reconnaissance. |
-| WAN-block HIGH floor | 200 | Your firewall normally sees high block volume. | Even modest scans should wake you up. |
+| WAN-block suppress ceiling | 200 | You want earlier visibility into scanning activity. Lower it (e.g. to 100) to re-enable LOW alerts. | Baseline noise is still leaking through — raise it further. |
+| WAN-block HIGH floor | 500 | Your firewall normally sees high block volume. | Even modest scans should wake you up; lower toward 200–300. |
 | Cert near-expiry | 30 days | Renewals are reliable. | You need more buffer to investigate failures. |
 | pf state HIGH | 70% | Lots of legitimate concurrent connections. | Want earlier DDoS warning. |
 | Quiet hours | 23:00–08:00 | You sleep different hours. | (Same — just shift the bounds.) |

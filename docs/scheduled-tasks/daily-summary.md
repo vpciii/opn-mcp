@@ -21,16 +21,18 @@ Each run produces two notifications:
 
 ### 1. Call the digest with a wider window
 
-Call `mcp__opnsense__get_security_digest` with `window_lines=2000` (deeper than the 30-min check so daily totals are more representative).
+Call `mcp__opnsense__get_security_digest` with `window_lines=2000` (deeper than the hourly check so daily totals are more representative).
 
 ### 2. Build a status icon and severity
 
 Determine the highest-severity warning present (same classification as the security-check task):
-- HIGH = failed logins / denied actions / stopped services / cert expired / cert <7d / WAN blocks ≥200 / pf state ≥90%
-- MEDIUM = cert 7-30d / WAN blocks 100-199 / pf state 70-90%
-- LOW = everything else
+- HIGH = failed logins / denied actions / stopped services / cert expired / cert <7d / WAN blocks >=500 / pf state >=90%
+- MEDIUM = cert 7-30d / WAN blocks 200-499 / pf state 70-90%
+- LOW = pending updates / other unmatched
 
-If no warnings: `✅ All clear`. Otherwise pick the severity emoji (🚨 / ⚠️ / ℹ️).
+Suppress (treat as no warning for severity calc, but include the count in the body): "WAN-origin firewall blocks" warnings with count < 200 — those are baseline internet scan noise, not actionable.
+
+If after suppression there are no warnings: `✅ All clear`. Otherwise pick the severity emoji (🚨 / ⚠️ / ℹ️).
 
 ### 3. Build the short push body (one dense line, target ~100 chars)
 
