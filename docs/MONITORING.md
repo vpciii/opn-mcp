@@ -217,18 +217,41 @@ Severity classification lives in the task prompts (`docs/scheduled-tasks/*.md`).
 
 ## Troubleshooting
 
-### Containers piling up
+### Containers piling up (and the zombie `claude` processes behind them)
 
-If `docker ps --filter ancestor=opn-mcp` shows multiple auto-named containers (e.g. `competent_goldstine`, `vigilant_pasteur`) hanging around for tens of minutes, the `--init` flag is missing or the python process isn't exiting cleanly on stdin EOF.
+Symptoms: `docker ps --filter ancestor=opn-mcp` shows dozens of auto-named containers (e.g. `competent_goldstine`, `vigilant_pasteur`) hanging around for hours. After a day, you might have 30+ containers and 50+ idle `claude` processes consuming RAM.
 
-- Verify `--init` is in the docker args (see prerequisite 2).
-- Restart Claude Code so its main session respawns the container with the new args.
-- Quick cleanup that won't touch your long-running named containers:
-  ```bash
-  docker rm -f $(docker ps -a --filter ancestor=opn-mcp \
-    --format '{{.ID}} {{.Names}}' \
-    | awk '$2 != "opn-mcp" && $2 != "opn-mcp-claude" {print $1}')
-  ```
+**Root cause** (verified on Claude Code 2.1.x): scheduled-task runs spawn a `claude` binary that does its work and then doesn't exit. It lingers at 0% CPU, holding its `docker run` subprocess open, which keeps the container alive (despite `--rm` being set, since the container only exits when its stdio parent dies). The `--init` flag in the docker args was added to fix a different symptom (signal forwarding inside the container); it doesn't help here, because no signal is ever sent — the parent process is alive, just idle.
+
+**Mitigation**: a host-level cleanup job that periodically kills the zombie `claude` processes (identified by the `--replay-user-messages --settings {}` pattern with no `--resume`) and any orphan opn-mcp containers.
+
+The repo ships this as two files under `scripts/`:
+
+- `scripts/cleanup-stale-scheduled-tasks.sh` — the cleanup script itself. Safe to run any time; conservative about what it kills (idle processes only, never the active scheduled task, never the long-running interactive containers).
+- `scripts/com.opnsense-mcp.cleanup.plist` — a launchd plist that runs the script every hour.
+
+**Install** (macOS):
+
+```bash
+# 1. Edit the plist to point at your local repo path
+$EDITOR scripts/com.opnsense-mcp.cleanup.plist
+# Change the ProgramArguments path to wherever scripts/cleanup-stale-scheduled-tasks.sh lives
+
+# 2. Install
+cp scripts/com.opnsense-mcp.cleanup.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.opnsense-mcp.cleanup.plist
+
+# 3. Verify the immediate run logged something
+tail ~/Library/Logs/opn-mcp-cleanup.log
+```
+
+**Immediate manual cleanup** (without installing the launchd job):
+
+```bash
+./scripts/cleanup-stale-scheduled-tasks.sh
+```
+
+The cleanup runs cheaply (a couple of `ps` + `docker` calls) and is a no-op when nothing's stale. Long-term, the real fix is upstream in Claude Code — file a bug if you care.
 
 ### Notification arrives but you can't read the full text
 

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Launchd job: opn-mcp stale-task cleanup
+  ========================================
+
+  Runs cleanup-stale-scheduled-tasks.sh every hour to reap leftover Claude
+  Code scheduled-task processes and their orphaned docker containers.
+
+  Install:
+    1. Edit PATH_TO_REPO below to your local checkout of opn-mcp.
+    2. Copy this file to ~/Library/LaunchAgents/com.opnsense-mcp.cleanup.plist
+    3. Load it:
+         launchctl load ~/Library/LaunchAgents/com.opnsense-mcp.cleanup.plist
+    4. (Optional) trigger an immediate run to verify:
+         launchctl start com.opnsense-mcp.cleanup
+    5. Tail the log if you want to watch:
+         tail -f ~/Library/Logs/opn-mcp-cleanup.log
+
+  Unload:
+    launchctl unload ~/Library/LaunchAgents/com.opnsense-mcp.cleanup.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.opnsense-mcp.cleanup</string>
+
+    <!-- EDIT THIS PATH to point at your repo checkout -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/vpciii/Developer/personal/opn-mcp/scripts/cleanup-stale-scheduled-tasks.sh</string>
+    </array>
+
+    <!-- Run every hour (3600 seconds) -->
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <!-- Also run once at agent load so the first cleanup is immediate -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/vpciii/Library/Logs/opn-mcp-cleanup.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/vpciii/Library/Logs/opn-mcp-cleanup.log</string>
+
+    <!-- Inherit user's PATH so docker is findable -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>
