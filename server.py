@@ -865,17 +865,25 @@ async def get_security_digest(window_lines: int = 500) -> dict:
     try:
         status: Any = await _get("/core/firmware/status")
         if isinstance(status, dict):
-            available = status.get("status") == "ok"
+            # Trust the package count, not the status string. OPNsense returns
+            # status="ok" when there's nothing to update and other strings
+            # (e.g. "update", "upgrade") when there are; the previous check
+            # had this inverted and silently masked pending updates.
+            package_count = len(status.get("upgrade_packages", []) or []) + len(
+                status.get("new_packages", []) or []
+            )
+            available = package_count > 0
             digest["info"]["updates"] = {
                 "available": available,
                 "status_msg": status.get("status_msg"),
                 "current_version": status.get("product_version"),
                 "last_check": status.get("last_check"),
-                "package_count": len(status.get("upgrade_packages", []) or [])
-                + len(status.get("new_packages", []) or []),
+                "package_count": package_count,
             }
             if available:
-                digest["warnings"].append("Pending OPNsense / package updates")
+                digest["warnings"].append(
+                    f"Pending OPNsense / package updates ({package_count} packages)"
+                )
         else:
             digest["info"]["updates"] = {"error": "unexpected response"}
     except Exception as e:
