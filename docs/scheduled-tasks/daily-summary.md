@@ -19,9 +19,11 @@ Each run produces two notifications:
 
 ## Steps
 
-### 1. Call the digest with a wider window
+### 1. Gather data
 
-Call `mcp__opnsense__get_security_digest` with `window_lines=2000` (deeper than the hourly check so daily totals are more representative).
+Make these calls in parallel (independent — fire in one batch):
+- `mcp__opnsense__get_security_digest` with `window_lines=2000` (deeper than the hourly check so daily totals are more representative)
+- `mcp__opnsense__get_top_talkers` with `top_n=5` — current bandwidth snapshot (this is rate-now, not 24h totals; useful for catching an actively-running miner / exfil, not for after-the-fact analysis)
 
 ### 2. Build a status icon and severity
 
@@ -61,13 +63,31 @@ Format roughly:
 <status emoji> **<status text>**
 
 **Logins (24h)**: <successful_count> ok, <failed_count> failed
+  - <user>@<ip> (<count>x), <user>@<ip> (<count>x)   ← from info.auth.successful_logins_by_ip, top 3
 **WAN blocks**: <wan_origin_count> (LAN-side: <lan_origin_count> — state churn, ignored)
+  - Top source: <ip> (<count>x)   ← from info.firewall.top_blocked_sources_wan[0]
+  - Top port: <port>/<proto> (<count>x)   ← from info.firewall.top_blocked_dest_ports_wan[0]
+**Top talkers (now)**:
+  - LAN: <addr> (<rate_bits> bps), <addr> (<rate_bits> bps)   ← top 2 from get_top_talkers
+  - WAN: <addr> (<rate_bits> bps), <addr> (<rate_bits> bps)
 **Services**: <running> running, <stopped> stopped
 **Cert next expiry**: <descr> in <N>d
 **Updates**: available (N packages) | none
 **pf state table**: <current> / <limit> (<pct>%)
-**Config changes (window)**: <count>
+**Config changes (window)**: <count> — <classification>
 ```
+
+**Successful logins detail**: only render the per-user-IP line if `successful_logins_by_ip` is non-empty. Top 3 entries inline. Omit the line if the list is empty.
+
+**Top blocked source/port**: omit each sub-bullet if its list is empty. If `wan_origin_count` is 0, skip the section entirely.
+
+**Top talkers formatting**: convert `rate_bits` to a human-readable rate: `< 1 Mbps` show as `<N> Kbps`, `>= 1 Mbps` show as `<N.N> Mbps`. Skip a row entirely if `rate_bits == 0`. If the top-talkers tool returns an error, render `**Top talkers**: unavailable` and continue (don't abort the alert).
+
+**Config changes classification** (use `largest_burst` and `hourly_buckets` from the digest's `info.config_changes`):
+- If `count == 0`: render as `**Config changes (window)**: none`
+- If `largest_burst.count >= 5`: `<count> — burst (<largest_burst.count> in 1h on <largest_burst.hour>, likely admin session)`
+- If `len(hourly_buckets) >= count * 0.7` (i.e. saves spread across many distinct hours): `<count> — steady (likely automation: ACME / dyndns / scheduled tasks)`
+- Otherwise: `<count> — mixed`
 
 If there are warnings, list them at the top with their severity emoji prefix.
 

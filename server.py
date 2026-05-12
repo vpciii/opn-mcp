@@ -6,6 +6,7 @@ import os
 import re
 import ssl
 import time
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -751,10 +752,19 @@ async def get_security_digest(window_lines: int = 500) -> dict:
         failed_by_ip = collections.Counter(
             e["source_ip"] for e in failed if e.get("source_ip")
         )
+        successful_by_user_ip = collections.Counter(
+            (e["user"], e["source_ip"])
+            for e in successful
+            if e.get("user") and e.get("source_ip")
+        )
         digest["info"]["auth"] = {
             "successful_count": len(successful),
             "failed_count": len(failed),
             "successful_users": sorted({e["user"] for e in successful if e.get("user")}),
+            "successful_logins_by_ip": [
+                {"user": u, "ip": ip, "count": c}
+                for (u, ip), c in successful_by_user_ip.most_common(10)
+            ],
             "denied_admin_actions": len(denied),
             "top_failed_ips": [
                 {"ip": ip, "count": c} for ip, c in failed_by_ip.most_common(5)
@@ -782,6 +792,11 @@ async def get_security_digest(window_lines: int = 500) -> dict:
         wan_by_src = collections.Counter(
             e["src_ip"] for e in wan_blocks if e.get("src_ip")
         )
+        wan_by_dst_port = collections.Counter(
+            f"{e['dst_port']}/{e['proto']}"
+            for e in wan_blocks
+            if e.get("dst_port") and e.get("proto")
+        )
         digest["info"]["firewall"] = {
             "block_count": len(blocks),
             "wan_origin_count": len(wan_blocks),
@@ -789,6 +804,9 @@ async def get_security_digest(window_lines: int = 500) -> dict:
             "pass_count": sum(1 for e in parsed if e.get("action") == "pass"),
             "top_blocked_sources_wan": [
                 {"ip": ip, "count": c} for ip, c in wan_by_src.most_common(5)
+            ],
+            "top_blocked_dest_ports_wan": [
+                {"port": p, "count": c} for p, c in wan_by_dst_port.most_common(5)
             ],
         }
         # Threshold on WAN-origin blocks only. LAN-origin blocks are nearly
@@ -957,9 +975,30 @@ async def _count_config_changes(window_lines: int) -> dict:
     raw = await _fetch_log("system", limit=window_lines, search="config-event: new_config")
     rows = raw.get("rows", []) if isinstance(raw, dict) else []
     timestamps = [r.get("timestamp") for r in rows if r.get("timestamp")]
+
+    buckets: collections.Counter[str] = collections.Counter()
+    for ts in timestamps:
+        try:
+            bucket = datetime.fromisoformat(ts).replace(minute=0, second=0, microsecond=0)
+            buckets[bucket.isoformat()] += 1
+        except (ValueError, TypeError):
+            continue
+
+    hourly_buckets = [
+        {"hour": hour, "count": count}
+        for hour, count in sorted(buckets.items(), reverse=True)
+    ]
+    largest_burst = (
+        max(hourly_buckets, key=lambda b: b["count"]) if hourly_buckets else None
+    )
+
     return {
         "count": len(rows),
         "latest_timestamps": timestamps[:10],
+        "hourly_buckets": hourly_buckets,
+        "largest_burst": largest_burst,
+        "earliest": timestamps[-1] if timestamps else None,
+        "latest": timestamps[0] if timestamps else None,
     }
 
 
@@ -1073,11 +1112,21 @@ async def get_recent_config_changes(window_lines: int = 500) -> dict:
     """Recent OPNsense configuration save events.
 
     Parses the `core/system` log for `config-event: new_config` entries —
-    one per config save. Returns count and most-recent timestamps.
+    one per config save. Each save creates a backup at
+    /conf/backup/config-<epoch>.xml.
 
-    Each save creates a backup at /conf/backup/config-<epoch>.xml. Patterns
-    to watch for: changes outside maintenance windows, bursts of saves
-    (someone exploring), or saves at unusual times of day.
+    Returns:
+      - `count`              — total saves in window
+      - `latest_timestamps`  — 10 most recent (full ISO)
+      - `hourly_buckets`     — `[{hour, count}, ...]` sorted newest-first,
+                               so bursts (admin sessions) are visible as
+                               buckets with many saves while steady
+                               automation spreads thin across many hours
+      - `largest_burst`      — hour with the most saves (or null if none)
+      - `earliest` / `latest` — span of the window
+
+    Patterns to watch for: bursts (admin session or scripted churn),
+    saves outside maintenance windows, or saves at unusual hours.
     """
     try:
         return await _count_config_changes(window_lines)
