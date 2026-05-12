@@ -28,13 +28,13 @@ Make these calls in parallel (independent — fire in one batch):
 ### 2. Build a status icon and severity
 
 Determine the highest-severity warning present (same classification as the security-check task):
-- HIGH = failed logins / denied actions / stopped services / cert expired / cert <7d / WAN blocks >=500 / pf state >=90%
-- MEDIUM = cert 7-30d / WAN blocks 200-499 / pf state 70-90%
+- HIGH = failed logins / denied actions / stopped services / cert expired / cert <7d / "WAN blocks from single source ... (active scan/brute)" / pf state >=90%
+- MEDIUM = cert 7-30d / "WAN blocks from single source ... (focused scan)" / "WAN-origin firewall blocks ... (distributed flood)" / pf state 70-90%
 - LOW = pending updates / other unmatched
 
-Suppress (treat as no warning for severity calc, but include the count in the body): "WAN-origin firewall blocks" warnings with count < 200 — those are baseline internet scan noise, not actionable.
+The server only emits a WAN-block warning when the shape is meaningful (single source ≥ 50 hits, or total ≥ 1000 with no concentration). Background scan noise produces no warning — so no suppression rule is needed; the digest already filters it out. The persistent body still reports `wan_origin_count` plus top source/port for visibility either way.
 
-If after suppression there are no warnings: `✅ All clear`. Otherwise pick the severity emoji (🚨 / ⚠️ / ℹ️).
+If there are no warnings: `✅ All clear`. Otherwise pick the severity emoji (🚨 / ⚠️ / ℹ️).
 
 ### 3. Build the short push body (one dense line, target ~100 chars)
 

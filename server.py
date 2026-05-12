@@ -809,14 +809,32 @@ async def get_security_digest(window_lines: int = 500) -> dict:
                 {"port": p, "count": c} for p, c in wan_by_dst_port.most_common(5)
             ],
         }
-        # Threshold on WAN-origin blocks only. LAN-origin blocks are nearly
-        # always pf state-table churn (orphaned FIN/PSH packets after a
-        # config reload or session timeout) — cosmetic noise, not an attack.
-        # WAN-origin blocks at >= 50/window indicate active scan/flood.
-        if len(wan_blocks) >= 50:
+        # WAN-block alerting: prefer *concentration* over raw volume. Total
+        # volume scales with baseline internet scanner noise, but a single
+        # source dominating means focused activity (SSH brute / vuln scan /
+        # worm pivot) which is the actionable signal. Three gates, ordered
+        # most-specific first:
+        #   1. Single source >= 200 hits → HIGH (active brute/scan)
+        #   2. Single source >= 50 hits  → MEDIUM (focused scan)
+        #   3. Total >= 1000 distributed → MEDIUM (distributed flood / DDoS)
+        # LAN-origin blocks are excluded — they're nearly always pf
+        # state-table churn after config reload or session timeout.
+        top = wan_by_src.most_common(1)
+        top_src_ip, top_src_count = top[0] if top else (None, 0)
+        if top_src_count >= 200:
+            digest["warnings"].append(
+                f"{top_src_count} WAN blocks from single source {top_src_ip} "
+                "(active scan/brute)"
+            )
+        elif top_src_count >= 50:
+            digest["warnings"].append(
+                f"{top_src_count} WAN blocks from single source {top_src_ip} "
+                "(focused scan)"
+            )
+        elif len(wan_blocks) >= 1000:
             digest["warnings"].append(
                 f"{len(wan_blocks)} WAN-origin firewall blocks in window "
-                "(possible scan/flood)"
+                "(distributed flood)"
             )
     except Exception as e:
         digest["info"]["firewall"] = {"error": _fmt_exc(e)}
