@@ -60,7 +60,7 @@ ZOMBIE_PIDS=$(
 
 if [ -n "$ZOMBIE_PIDS" ]; then
   COUNT=$(echo "$ZOMBIE_PIDS" | wc -w | tr -d ' ')
-  echo "[$(date -Iseconds)] killing $COUNT zombie scheduled-task claude process(es)"
+  echo "[$(date '+%Y-%m-%dT%H:%M:%S%z')] killing $COUNT zombie scheduled-task claude process(es)"
   echo "$ZOMBIE_PIDS" | xargs kill -TERM 2>/dev/null || true
   sleep 2
   # If any survived, SIGKILL
@@ -83,6 +83,6 @@ ORPHAN_CONTAINERS=$(
 )
 if [ -n "$ORPHAN_CONTAINERS" ]; then
   COUNT=$(echo "$ORPHAN_CONTAINERS" | wc -w | tr -d ' ')
-  echo "[$(date -Iseconds)] removing $COUNT orphan opn-mcp container(s)"
+  echo "[$(date '+%Y-%m-%dT%H:%M:%S%z')] removing $COUNT orphan opn-mcp container(s)"
   echo "$ORPHAN_CONTAINERS" | xargs docker rm -f >/dev/null 2>&1 || true
 fi

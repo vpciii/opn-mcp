@@ -32,9 +32,12 @@
         <string>/Users/vpciii/Developer/personal/opn-mcp/scripts/cleanup-stale-scheduled-tasks.sh</string>
     </array>
 
-    <!-- Run every hour (3600 seconds) -->
+    <!-- Run every 15 minutes (900 seconds). Tighter cadence keeps the
+         zombie-process backlog small. The cleanup itself only acts on
+         processes idle >=5 min, so it never touches a freshly-spawned
+         scheduled task that's still actively running. -->
     <key>StartInterval</key>
-    <integer>3600</integer>
+    <integer>900</integer>
 
     <!-- Also run once at agent load so the first cleanup is immediate -->
     <key>RunAtLoad</key>
