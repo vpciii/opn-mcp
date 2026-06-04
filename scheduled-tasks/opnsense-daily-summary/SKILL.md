@@ -20,6 +20,12 @@ Each run produces two notifications:
 Make these calls in parallel (independent — fire in one batch):
 - `mcp__opnsense__get_security_digest` with `window_lines=2000` (deeper than the hourly check so daily totals are more representative)
 - `mcp__opnsense__get_top_talkers` with `top_n=5` — current bandwidth snapshot (this is rate-now, not 24h totals; useful for catching an actively-running miner / exfil, not for after-the-fact analysis)
+- `mcp__opnsense__get_wireguard_status` — site-to-site tunnel health (NPA peer)
+- `mcp__opnsense__get_gateway_status` — WAN gateway up/down
+- `mcp__opnsense__get_system_status` — memory / swap
+- `mcp__opnsense__get_unbound_stats` — DNS resolver health
+
+If any of the four supplemental calls errors, render its body line as `unavailable` and continue (same spirit as the top-talkers fallback) — only a `get_security_digest` failure triggers the failure-mode path.
 
 ### 2. Build a status icon and severity
 
@@ -29,6 +35,11 @@ Determine the highest-severity warning present from the remaining list (same cla
 - HIGH = failed logins / denied actions / stopped services / cert expired / cert <7d / "WAN blocks from single source ... (active scan/brute)" / pf state >=90%
 - MEDIUM = cert 7-30d / "WAN blocks from single source ... (focused scan)" / "WAN-origin firewall blocks ... (distributed flood)" / pf state 70-90%
 - LOW = pending updates / other unmatched
+
+**Also derive these synthetic warnings** (identical rules to the hourly security-check task) and fold them into the severity decision and the warnings list at the top of the body:
+- **WireGuard NPA tunnel DOWN** (HIGH): from `get_wireguard_status`, the `type:"peer"` row named `NPA_Wireguard` has `peer-status` != "online" OR `latest-handshake-age` > 300s. Ignore the `type:"interface"` row (always reads offline).
+- **WAN gateway not Online** (HIGH): from `get_gateway_status`, `WAN_DHCP.status_translated` != "Online".
+- **Memory/swap pressure** (MEDIUM): from `get_system_status` `Swap:` line, swap used (total − free) > 512M.
 
 The server only emits a WAN-block warning when the shape is meaningful (single source ≥ 50 hits, or total ≥ 1000 with no concentration). Background scan noise produces no warning — so no suppression rule is needed; the digest already filters it out. The persistent body still reports `wan_origin_count` plus top source/port for visibility either way.
 
@@ -44,6 +55,8 @@ Stats to include (compact, separated by `·`):
 - Stopped svc: only mention if > 0: `<N>svc down`
 - Cert next: `cert <N>d` (soonest-expiring in_use cert; "OK" if all > 60d)
 - Updates: only mention if available: `updates`
+- WireGuard: only mention if down: `WG down`
+- WAN gateway: only mention if not Online: `WAN <status>`
 
 Examples:
 - `✅ All clear · 18L / 0fail · 92blk · cert 89d`
@@ -72,6 +85,10 @@ Format roughly:
 **Cert next expiry**: <descr> in <N>d
 **Updates**: available (N packages) | none
 **pf state table**: <current> / <limit> (<pct>%)
+**WireGuard (NPA site-to-site)**: <up — handshake <age>s ago | DOWN (status <peer-status>, last handshake <age>s)>
+**WAN gateway**: <status_translated> (<loss> loss / <delay> delay, or "no monitor IP" when ~)
+**Memory**: <free> free · swap <used>/<total>
+**DNS (Unbound)**: <queries> q · <hit%> cache hit · <avg_ms>ms avg recursion · <timeouts> timeouts (cumulative since resolver start)
 **Config changes (window)**: <count> — <classification>
 ```
 
@@ -86,6 +103,14 @@ Format roughly:
 - If `largest_burst.count >= 5`: `<count> — burst (<largest_burst.count> in 1h on <largest_burst.hour>, likely admin session)`
 - If `len(hourly_buckets) >= count * 0.7` (i.e. saves spread across many distinct hours): `<count> — steady (likely automation: ACME / dyndns / scheduled tasks)`
 - Otherwise: `<count> — mixed`
+
+**WireGuard line**: read the `type:"peer"` row named `NPA_Wireguard` (ignore the `type:"interface"` row — it always reads offline). Healthy = `peer-status: online` with `latest-handshake-age` < ~300s → `up — handshake <age>s ago`. Otherwise → `DOWN ...` and treat as a HIGH warning (step 2). Call errored → `unavailable`.
+
+**WAN gateway line**: from `WAN_DHCP`. Show `status_translated`. `loss`/`delay` read `~` until a monitor IP is configured on the gateway — render `no monitor IP` in that case rather than `~`. Not Online → HIGH warning.
+
+**Memory line**: parse `get_system_status.activity_summary`. Free memory = the `Mem:` line's `<n> Free` field; swap from the `Swap:` line (used = total − free). swap used > 512M → MEDIUM warning.
+
+**DNS (Unbound) line**: from `get_unbound_stats.data.total`: queries = `num.queries`; hit% = `num.cachehits / num.queries * 100` (whole %); avg recursion ms = `recursion.time.avg` × 1000 (1 decimal); timeouts = `num.queries_timed_out`. These counters are cumulative since the resolver last (re)started (`data.time.up` seconds) — a low hit% right after a reboot/upgrade is just a cold cache, NOT a problem. Only treat as noteworthy if `queries_timed_out` is large or `num.queries` is 0 (resolver not serving). Call errored → `unavailable`.
 
 If there are warnings, list them at the top with their severity emoji prefix.
 

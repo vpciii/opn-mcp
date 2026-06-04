@@ -18,19 +18,37 @@ Each notification has two parts:
 
 ## Steps
 
-### 1. Call the digest
+### 1. Gather data (one parallel batch)
 
-Call `mcp__opnsense__get_security_digest` (default window_lines=500).
+Fire these in parallel:
+- `mcp__opnsense__get_security_digest` (default window_lines=500) — primary "is anything wrong" call.
+- `mcp__opnsense__get_wireguard_status` — site-to-site tunnel health (see step 2b).
+- `mcp__opnsense__get_gateway_status` — WAN gateway up/down (see step 2c).
+- `mcp__opnsense__get_system_status` — memory/swap pressure (see step 2d).
 
-### 2. If `warnings` array is empty, exit silently
+The digest's `warnings` array is the main signal; steps 2b–2d derive a few extra **synthetic** warnings from the other calls and append them to that list before classification. If any of the three supplemental calls errors, skip just that check (don't abort) and note it in the run report.
 
-Don't send any notification. Don't print anything dramatic. Just report "Clean digest — no warnings. Exiting silently as expected." and stop. The check ran clean — that's the expected case 99% of the time.
+### 2. Build the working warnings list, then exit silently if empty
+
+Start from the digest's `warnings` array, apply the false-positive filter (2a), and append any synthetic health warnings (2b–2d). **After all of 2a–2d, if the combined list is empty, exit silently** — no notification, just report "Clean — no warnings (digest + WG + gateway + memory). Exiting silently as expected." and stop. That's the expected case ~99% of the time.
 
 ### 2a. Filter known false positives (WireGuard peer)
 
-Before classifying, drop any warning whose text matches `WAN blocks from single source 54.224.141.79` (any variant — focused scan, active scan/brute, etc.). This is the authorized WG peer at `54.224.141.79`; its blocked-UDP noise is not an attack signal. Note this in the run report so the suppression is visible.
+Drop any digest warning whose text matches `WAN blocks from single source 54.224.141.79` (any variant — focused scan, active scan/brute, etc.). This is the authorized WG peer at `54.224.141.79`; its blocked-UDP noise is not an attack signal. Note this in the run report so the suppression is visible.
 
-If filtering empties the warnings list, exit silently (same as step 2).
+### 2b. WireGuard tunnel health (synthetic warning)
+
+From `get_wireguard_status`, find the row with `type: "peer"` and `name: "NPA_Wireguard"` (the site-to-site peer, endpoint `54.224.141.79:51820`). **Ignore the `type: "interface"` row** — it always reports `peer-status: offline` / null handshake and is NOT the tunnel state.
+
+Append a synthetic warning `WireGuard NPA tunnel DOWN (last handshake <age>s ago / status <peer-status>)` if the peer row is missing, OR `peer-status` != `"online"`, OR `latest-handshake-age` (seconds) is `> 300`. A healthy tunnel re-handshakes within its 25s keepalive (age normally < ~180s), so >300s means genuinely down, not a transient miss.
+
+### 2c. WAN gateway health (synthetic warning)
+
+From `get_gateway_status`, check the WAN gateway item (`name: "WAN_DHCP"`). If `status_translated` is not `"Online"` (e.g. "Offline", "Down", "Pending"), append a synthetic warning `WAN gateway <name> is <status_translated>`. Note: `loss`/`delay` are `~` (no monitor IP configured), so only up/down is evaluable today. (If a monitor IP is later set on the gateway, also warn when `loss` > 20% or `delay` is abnormally high.)
+
+### 2d. Memory / swap pressure (synthetic warning)
+
+From `get_system_status.activity_summary`, parse the `Swap:` line (format `Swap: <total> Total, <free> Free`, sizes like `8192M`). Compute swap used = total − free. If swap used is `> 512M`, append a synthetic warning `Memory pressure: swap in use (<used> of <total>)`. Healthy is 0 used; a firewall that has started swapping is an early memory-pressure signal the digest doesn't cover.
 
 ### 3. Classify each warning by severity
 
@@ -42,12 +60,15 @@ If filtering empties the warnings list, exit silently (same as step 2).
 - Any "Certificate ... expires in N d" where N < 7
 - Any "WAN blocks from single source ... (active scan/brute)" warning (server emits this when one source ≥ 200 hits)
 - Any "pf state table" warning where percent >= 90 (critical)
+- `WireGuard NPA tunnel DOWN ...` (synthetic — site-to-site link lost)
+- `WAN gateway ... is <not Online>` (synthetic — WAN/gateway down)
 
 **MEDIUM** (notify any time, 24/7):
 - "Certificate ... expires in N d" where 7 <= N < 30
 - "WAN blocks from single source ... (focused scan)" warning (server emits this when one source ≥ 50 hits)
 - "WAN-origin firewall blocks ... (distributed flood)" warning (server emits this when total ≥ 1000 with no single dominant source)
 - "pf state table" where 70 <= percent < 90
+- `Memory pressure: swap in use ...` (synthetic — early memory-pressure signal)
 
 **LOW** (notify only between 08:00 and 23:00 local time):
 - "Pending OPNsense / package updates"
@@ -79,6 +100,9 @@ Determine the highest severity present (HIGH > MEDIUM > LOW). Pick its emoji: �
   - WAN blocks (distributed) → `<N> WAN blocks (flood)`
   - State table → `pf state <pct>%`
   - Updates → `updates available`
+  - WireGuard tunnel down → `WG NPA tunnel down`
+  - WAN gateway down → `WAN gw <status>`
+  - Memory/swap pressure → `swap in use <used>`
 - Examples:
   - `🚨 1 HIGH · 3 failed UI logins`
   - `⚠️ 2 MEDIUM · cert 12d, 87 blks from 5.6.7.8`
@@ -95,6 +119,9 @@ Determine the highest severity present (HIGH > MEDIUM > LOW). Pick its emoji: �
   - For service warnings: list stopped services from `info.services.stopped`
   - For auth (failed): top failed source IPs from `info.auth.top_failed_ips`
   - For auth (successful, only if there's also a failed-login or denied warning to give context on who else is hitting the box): top entries from `info.auth.successful_logins_by_ip` (`<user>@<ip> (<count>x)`)
+  - For the WireGuard warning: peer name, `peer-status`, last-handshake age (seconds), and endpoint from the `type:"peer"` row
+  - For the gateway warning: gateway name and `status_translated` (plus `loss`/`delay` once a monitor IP is configured)
+  - For the memory warning: swap used / total, plus free memory from the `Mem:` line
 
 ### 6. Send both notifications
 
@@ -140,7 +167,7 @@ One sentence: warnings count, severity, whether you notified or deferred for qui
 
 - Don't notify on a clean digest (warnings = []).
 - Don't notify if all warnings are LOW and it's between 23:00 and 08:00.
-- Don't try to "improve" the digest by calling other tools — keep this fast and predictable.
+- Keep the tool set tight: the digest plus the three health calls (`get_wireguard_status`, `get_gateway_status`, `get_system_status`) are all that should run. Don't add further tools or deep log-diving — this must stay fast and predictable.
 
 ## Examples
 
