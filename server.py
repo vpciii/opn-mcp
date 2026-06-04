@@ -448,6 +448,83 @@ def _is_lan_origin(ip: str | None) -> bool:
     )
 
 
+def _is_noise_dst(ip: str | None) -> bool:
+    """True if a block's *destination* is multicast or broadcast.
+
+    SSDP (239.255.255.250), mDNS (224.0.0.251) and similar service-discovery
+    chatter is emitted by the firewall itself (e.g. tailscaled's NAT-PMP / UPnP
+    port-mapper) and then seen echoed back on a shared WAN segment, where it's
+    blocked inbound with our own WAN IP as the source. It is never an inbound
+    external attack, so it is excluded from the WAN attack ranking.
+    """
+    if not ip:
+        return False
+    try:
+        addr = ipaddress.ip_address(ip)
+    except (ValueError, TypeError):
+        return False
+    return bool(addr.is_multicast) or ip == "255.255.255.255"
+
+
+async def _own_ipv4_addresses() -> set[str]:
+    """Best-effort set of the firewall's own IPv4 addresses.
+
+    Used to drop self-sourced blocks — our own traffic echoed back on a shared
+    WAN segment and blocked inbound with our own WAN IP as the source. Returns
+    an empty set on any failure, in which case callers fall back to the
+    destination-based noise filter (`_is_noise_dst`) alone.
+    """
+    ips: set[str] = set()
+    try:
+        data = await _get("/diagnostics/interface/getInterfaceStatistics")
+        stats = data.get("statistics", data) if isinstance(data, dict) else {}
+        if isinstance(stats, dict):
+            for entry in stats.values():
+                if not isinstance(entry, dict):
+                    continue
+                addr = entry.get("address")
+                if not isinstance(addr, str):
+                    continue
+                try:
+                    parsed = ipaddress.ip_address(addr)
+                except ValueError:
+                    continue
+                if parsed.version == 4:
+                    ips.add(addr)
+    except Exception:
+        pass
+    return ips
+
+
+def _split_blocks(
+    blocks: list[dict], own_ips: set[str] | None = None
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Split firewall block entries into (wan, lan, self_noise) buckets.
+
+      - wan        : public external source — real attack signal (scans/brute)
+      - lan        : private/loopback/multicast source — pf state-table churn,
+                     not an attack
+      - self_noise : the firewall's own traffic echoed back — the source is one
+                     of our own IPs, or the destination is multicast/broadcast
+                     (SSDP/mDNS). Benign self-chatter, split out so it can't
+                     crowd out (or masquerade as) a real WAN attacker in the
+                     rankings.
+    """
+    own = own_ips or set()
+    wan: list[dict] = []
+    lan: list[dict] = []
+    self_noise: list[dict] = []
+    for e in blocks:
+        src = e.get("src_ip")
+        if _is_lan_origin(src):
+            lan.append(e)
+        elif (src and src in own) or _is_noise_dst(e.get("dst_ip")):
+            self_noise.append(e)
+        else:
+            wan.append(e)
+    return wan, lan, self_noise
+
+
 def _parse_filter_log(rows: list[dict]) -> list[dict]:
     """Parse OPNsense filterlog CSV lines into structured dicts.
 
@@ -687,8 +764,8 @@ async def get_firewall_blocks(limit: int = 500, top_n: int = 10) -> dict:
         blocks = [e for e in parsed if e.get("action") == "block"]
         passes = [e for e in parsed if e.get("action") == "pass"]
 
-        wan_blocks = [e for e in blocks if not _is_lan_origin(e.get("src_ip"))]
-        lan_blocks = [e for e in blocks if _is_lan_origin(e.get("src_ip"))]
+        own_ips = await _own_ipv4_addresses()
+        wan_blocks, lan_blocks, self_noise_blocks = _split_blocks(blocks, own_ips)
 
         by_src = collections.Counter(
             e["src_ip"] for e in wan_blocks if e.get("src_ip")
@@ -711,6 +788,7 @@ async def get_firewall_blocks(limit: int = 500, top_n: int = 10) -> dict:
             "block_count": len(blocks),
             "wan_origin_count": len(wan_blocks),
             "lan_origin_count": len(lan_blocks),
+            "self_noise_count": len(self_noise_blocks),
             "pass_count": len(passes),
             "top_source_ips": [
                 {"ip": ip, "count": c} for ip, c in by_src.most_common(top_n)
@@ -787,8 +865,8 @@ async def get_security_digest(window_lines: int = 500) -> dict:
         rows = raw.get("rows", []) if isinstance(raw, dict) else []
         parsed = _parse_filter_log(rows)
         blocks = [e for e in parsed if e.get("action") == "block"]
-        wan_blocks = [e for e in blocks if not _is_lan_origin(e.get("src_ip"))]
-        lan_blocks = [e for e in blocks if _is_lan_origin(e.get("src_ip"))]
+        own_ips = await _own_ipv4_addresses()
+        wan_blocks, lan_blocks, self_noise_blocks = _split_blocks(blocks, own_ips)
         wan_by_src = collections.Counter(
             e["src_ip"] for e in wan_blocks if e.get("src_ip")
         )
@@ -801,6 +879,7 @@ async def get_security_digest(window_lines: int = 500) -> dict:
             "block_count": len(blocks),
             "wan_origin_count": len(wan_blocks),
             "lan_origin_count": len(lan_blocks),
+            "self_noise_count": len(self_noise_blocks),
             "pass_count": sum(1 for e in parsed if e.get("action") == "pass"),
             "top_blocked_sources_wan": [
                 {"ip": ip, "count": c} for ip, c in wan_by_src.most_common(5)
@@ -818,7 +897,10 @@ async def get_security_digest(window_lines: int = 500) -> dict:
         #   2. Single source >= 50 hits  → MEDIUM (focused scan)
         #   3. Total >= 1000 distributed → MEDIUM (distributed flood / DDoS)
         # LAN-origin blocks are excluded — they're nearly always pf
-        # state-table churn after config reload or session timeout.
+        # state-table churn after config reload or session timeout. Self-noise
+        # blocks (our own SSDP / NAT-PMP multicast echoed back on the shared WAN
+        # segment with our own IP as the source) are excluded too, so they can't
+        # masquerade as a top "WAN attacker".
         top = wan_by_src.most_common(1)
         top_src_ip, top_src_count = top[0] if top else (None, 0)
         if top_src_count >= 200:
