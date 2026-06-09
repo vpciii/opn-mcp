@@ -3,16 +3,23 @@
 This project follows the shared methodology at
 `$METHODOLOGY_HOME/methodology.md` — a small set of durable
 practices that predate (and outlast) any particular tool or framework.
+Synced to methodology 0.9.0.
 
 ## Before you write code
 
 1. Read `$METHODOLOGY_HOME/methodology.md` (once, if unfamiliar).
-2. Skim `docs/adr/` from highest number down until you understand the
-   shape of the system.
+2. Read `docs/architecture.md` for the current shape of the system,
+   then skim `docs/adr/` from highest number down for the *why*.
 3. For anything larger than a one-line fix, open or claim an issue
    first.
 
 ## How work flows
+
+> For an **uncertain or expensive bet** — where it's not yet clear *what*
+> or *whether* to build — do the pre-spec planning first in
+> `planning/<slug>/` (problem, options, appetite) per
+> `$METHODOLOGY_HOME/planning.md`; it converges to the spec below.
+> Clear-cut work skips straight to the spec.
 
 1. **Spec** — for any non-trivial feature, copy the spec templates
    from `$METHODOLOGY_HOME/templates/spec/` to
@@ -52,7 +59,8 @@ first rather than starting to code.
 - Lint and strict type-check pass (per the project's tooling ADR).
 - The corresponding task in `tasks.md` is marked `[x]` with the
   merged PR number or hash.
-- Any new behavior is covered by at least one test (methodology §5).
+- Any new behavior is covered by at least one test; a test that
+  verifies a spec success criterion cites its id (methodology §5).
 - A bug fix cites its **red→green evidence**: the regression test's
   failing output from before the fix, or a test-first commit a
   reviewer can check out and run (methodology §5, ADR 0015).
@@ -72,12 +80,21 @@ first rather than starting to code.
 **A feature (one spec) is done when:**
 
 - Every task in its `tasks.md` is marked `[x]`.
-- Every success criterion in `spec.md` maps to a passing test. (A
-  reference checker to adapt or replace ships at
+- Every success criterion in `spec.md` is recorded in the spec's
+  Traceability table against a passing test, and the
+  spec-criterion-coverage check passes in CI (methodology §5) — not
+  mapped by hand. (A reference checker to adapt or replace ships at
   `$METHODOLOGY_HOME/templates/ci/check-spec-coverage.py`, ADR 0017.)
-- The spec's status field is updated to `Implemented`.
+- Every `MUST` / `MUST NOT` requirement in `spec.md` is reflected in at
+  least one success criterion, so it inherits a test; the Traceability
+  table records the `R-… → SC-… → test` chain (methodology §5, ADR 0011).
 - Anything learned during implementation that contradicts the spec or
-  plan has been written back into it, noted in a commit message.
+  plan has been written back into it **before** the spec is marked
+  `Implemented`.
+- The spec's status field is updated to `Implemented`, which
+  **freezes** it into a historical record. A contradiction found later
+  goes to a living artifact — a regression test, a new spec, or an ADR
+  (methodology §2, §8) — not back into the frozen spec.
 
 ## Reviews
 
@@ -168,6 +185,13 @@ read the same artifacts you do — `CLAUDE.md`, ADRs, specs, glossary.
 The rule is simple: **the AI is not the author of record. You are.**
 Review every diff. Run every test. Sign your commits.
 
-An agent shows "done," it doesn't assert it: a criterion claimed met
-cites the passing test that proves it; a fix claimed correct cites the
-regression test failing before it (red→green evidence).
+Two guardrails matter most because they fail quietly (methodology
+"AI-agent guardrails"):
+
+- **An agent must not silently rewrite an agreed contract.** Changes to
+  an `Approved` / `Implemented` spec's requirements or success criteria
+  come as their own diff for your sign-off — never folded into an
+  implementation PR.
+- **An agent shows "done," it doesn't assert it.** A criterion claimed
+  met cites the passing test that proves it; a fix claimed correct
+  cites the regression test failing before it (red→green evidence).
