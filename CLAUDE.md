@@ -32,7 +32,8 @@ in `docs/adr/` and `docs/glossary.md`.
   / backward-compatible APIs; call out and ADR anything truly
   irreversible.
 - **Tests before merge.** New behavior ships with tests; bug fixes ship
-  a regression test. Test behavior, not implementation.
+  a regression test, with the failing-before run (or a test-first
+  commit) cited in the PR. Test behavior, not implementation.
 - **Secrets never in the repo.** Env or secret manager only. Trust
   boundaries / authz are ADR-worthy; security bugs ship a regression
   test.
