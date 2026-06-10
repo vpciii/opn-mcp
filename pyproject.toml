@@ -12,6 +12,7 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
+    "trustme>=1.2.1",
 ]
 
 [tool.pytest.ini_options]

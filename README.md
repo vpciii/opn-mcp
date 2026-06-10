@@ -93,7 +93,11 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 }
 ```
 
-Set `OPNSENSE_VERIFY_SSL` to `false` if your OPNsense uses a self-signed certificate.
+TLS verification is **on by default**. If your OPNsense uses a self-signed
+or private-CA certificate, point `OPNSENSE_CA_BUNDLE` at its CA certificate
+(PEM) — when running in Docker, mount the file and pass the in-container
+path. To disable verification explicitly instead (not recommended), set
+`OPNSENSE_VERIFY_SSL=false`. (ADR 0005)
 
 ### Run with SSE Transport (Remote Access)
 
@@ -142,7 +146,7 @@ See **[docs/MONITORING.md](docs/MONITORING.md)** for the full setup: architectur
 
 - Most tools are **read-only** — the only write operation is `toggle_dnat_rule`, which can enable/disable existing DNAT rules
 - Anti-lockout rules are protected and cannot be toggled
-- SSL verification is configurable via `OPNSENSE_VERIFY_SSL` (set to `false` for self-signed certs)
+- TLS verification is on by default; self-signed/private-CA certs are supported via `OPNSENSE_CA_BUNDLE`, and `OPNSENSE_VERIFY_SSL=false` is the explicit opt-out (ADR 0005)
 - The server defaults to stdio transport (for Claude Desktop via Docker), pass `--sse` for remote access
 - Some endpoints may not be available depending on your OPNsense version and installed plugins
 

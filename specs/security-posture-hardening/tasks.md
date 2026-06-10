@@ -10,10 +10,10 @@ progress) → `[x]` (done, PR merged). Link the PR number when merged.
 
 ---
 
-## Task 1 `[~]` — Bootstrap the test harness and CI
+## Task 1 `[x]` — Bootstrap the test harness and CI
 
 - **Depends on:** —
-- **PR:** #7
+- **PR:** #7 (merged)
 
 **What:** First tests in the repo: pytest + async runner + an
 `httpx.MockTransport` fixture; extract import-time config globals into
@@ -35,7 +35,7 @@ methodology reference, global ADR 0017).
 
 ---
 
-## Task 2 — TLS verification on by default + CA bundle
+## Task 2 `[~]` — TLS verification on by default + CA bundle
 
 - **Depends on:** Task 1
 - **PR:** —
