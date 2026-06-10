@@ -1,6 +1,6 @@
 # ADR 0002: Credential and transport security posture
 
-- **Status:** Accepted — TLS-verification-default portion superseded by ADR 0005
+- **Status:** Accepted — TLS-verification-default portion superseded by ADR 0005; SSE-transport portion superseded by ADR 0007
 - **Date:** 2026-06-09
 - **Deciders:** Vince Ciganik
 

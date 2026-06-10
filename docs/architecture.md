@@ -1,6 +1,6 @@
 # Architecture — opn-mcp
 
-- **Updated:** 2026-06-09 — changes in the **same PR** as the structure
+- **Updated:** 2026-06-10 — changes in the **same PR** as the structure
   it describes (methodology §2).
 
 A short, current-state overview of how the system is shaped **now**,
@@ -20,10 +20,10 @@ monitoring.
 ## System context
 
 ```
-[ MCP client (Claude Desktop / Claude Code /        stdio  or  SSE :8000
+[ MCP client (Claude Desktop / Claude Code /              stdio only
   scheduled security-check & daily-summary agents) ] ──────► [ opn-mcp ]
                                                                   │
-                                                                  │ HTTPS + API key/secret
+                                                                  │ HTTPS (verified) + API key/secret
                                                                   ▼
                                                         [ OPNsense REST API ]
 ```
@@ -39,10 +39,11 @@ host-side operational tooling.
 
 | Component | Responsibility | Lives in |
 |---|---|---|
-| Tool layer | ~24 `@mcp.tool()` functions (status/inventory, security monitoring incl. `get_security_digest`, firewall/NAT, VPN, logs); the sole write tool `toggle_dnat_rule` refuses anti-lockout rules | `server.py` |
-| HTTP client layer | `_client()` / `_get()` / `_post()`: per-call `httpx.AsyncClient` with basic auth, configurable TLS verify, `trust_env=False` | `server.py` |
+| Tool layer | ~24 `@mcp.tool()` functions (status/inventory, security monitoring incl. `get_security_digest`, firewall/NAT, VPN, logs); the sole write tool `toggle_dnat_rule` refuses anti-lockout and management-path rules structurally (ADR 0006) | `server.py` |
+| HTTP client layer | `_client()` / `_get()` / `_post()`: per-call `httpx.AsyncClient` with basic auth, TLS verified by default with optional CA pinning (ADR 0005), `trust_env=False` | `server.py` |
 | Log parsing & aggregation | Audit-login / filterlog parsers, WAN- vs LAN-origin block splitting, cert-expiry and config-change checks feeding the security digest | `server.py` |
-| Transport entrypoint | `FastMCP("opn-mcp")`; stdio by default, `--sse` serves SSE on port 8000 | `server.py`, `Dockerfile`, `docker-compose.yml` |
+| Transport entrypoint | `FastMCP("opn-mcp")`; stdio only — no network listener (ADR 0007) | `server.py`, `Dockerfile` |
+| Tests & CI | pytest suite (`httpx.MockTransport`, no live box) + spec-criterion coverage check on every PR | `tests/`, `scripts/`, `.github/workflows/` |
 | Scheduled-task skills | Prompt/skill definitions for the hourly security-check and daily-summary agents that *consume* this server | `scheduled-tasks/`, `docs/scheduled-tasks/`, `docs/MONITORING.md` |
 | Host cleanup script | launchd job reaping zombie scheduled-task `claude` processes and stale containers on the host | `scripts/` |
 
@@ -64,48 +65,50 @@ Recorded as a decision-capture ADR: `docs/adr/0004`.
 - **OPNsense REST API** — the only external service; every tool is a
   view over it. Endpoint availability varies with OPNsense version and
   installed plugins (e.g. `os-tailscale`).
-- **`mcp[cli]` (FastMCP)** — MCP protocol server and both transports.
+- **`mcp[cli]` (FastMCP)** — MCP protocol server, stdio transport.
 - **`httpx`** — async HTTP client to OPNsense; `trust_env=False` to
   bypass proxy env vars (see README troubleshooting).
-- **Docker / docker-compose** — packaging for the stdio (Claude
-  Desktop) and SSE (persistent service) deployment modes.
+- **Docker** — packaging for the stdio (Claude Desktop / Claude Code)
+  deployment mode.
 - Lockfile: `uv.lock` (committed).
 
 ## Trust boundaries
 
-Recorded as decision-capture ADRs: `docs/adr/0002` (credentials,
-TLS verify, SSE) and `docs/adr/0003` (write surface).
+Recorded in ADRs: `docs/adr/0002` (credentials; superseded in part by
+0005 and 0007), `docs/adr/0005` (TLS), `docs/adr/0006` (write surface),
+`docs/adr/0007` (transport).
 
 - **MCP client → server.** Untrusted/LLM-driven input enters here (tool
   arguments, e.g. `ping_host(target)`, `get_log` filters,
-  `toggle_dnat_rule(uuid)`). The server adds **no authentication of its
-  own**: stdio trusts the spawning process; the SSE transport on port
-  8000 is open to anyone who can reach it. The README assumes network
-  placement (LAN/Tailscale) provides that boundary — the actual
-  deployment is **not determined from the repo**.
+  `toggle_dnat_rule(uuid)`). The transport is **stdio only** — the
+  server opens no network listener, so the only client is the process
+  that spawned it (ADR 0007).
 - **Server → OPNsense.** Credentials are an OPNsense API key/secret
-  from env vars only (`.env` is gitignored; never in the repo). TLS
-  verification is **off by default** (`OPNSENSE_VERIFY_SSL=false`, for
-  self-signed certs).
+  from env vars only (`.env` is gitignored; never in the repo). TLS is
+  **verified by default**; self-signed setups pin a CA via
+  `OPNSENSE_CA_BUNDLE`, and `OPNSENSE_VERIFY_SSL=false` is the explicit
+  opt-out (ADR 0005).
 - **Authorization.** Effective privileges are whatever the OPNsense API
   user has — the README recommends a read-only group, but the actual
   privilege set is **unknown from the repo**. Server-side, the write
-  surface is limited to `toggle_dnat_rule`, which fetches the rule
-  first and refuses any whose description matches anti-lockout.
+  surface is limited to `toggle_dnat_rule`, which refuses synthetic
+  anti-lockout rows and rules covering the firewall's own management
+  path structurally, and treats server-side toggle failures as errors
+  (ADR 0006).
 - **Key rotation practice** — not determined from the repo.
 
 ## Shape-defining decisions
 
-Decision-capture ADRs (`adopting.md` seed step 3), each recording a
-pre-existing decision:
-
 - **ADR 0001** — stateless single-module MCP proxy over the OPNsense
-  REST API (stdio default, SSE opt-in).
-- **ADR 0002** — credential and transport security posture (env-var
-  secrets, `trust_env=False`, TLS-verify-off default, unauthenticated
-  SSE relying on network placement); the two defaults are flagged as
-  candidates for superseding ADRs.
-- **ADR 0003** — single curated write tool (`toggle_dnat_rule`) with
-  anti-lockout refusal.
+  REST API (decision capture).
+- **ADR 0002** — credential posture: env-var secrets, `trust_env=False`
+  (decision capture; TLS default superseded by 0005, SSE by 0007).
+- **ADR 0003** — single curated write tool (`toggle_dnat_rule`)
+  (decision capture; guard mechanism superseded by 0006).
 - **ADR 0004** — runtime dependencies and packaging (`mcp[cli]`,
-  `httpx`, uv lockfile, Docker/compose).
+  `httpx`, uv lockfile, Docker).
+- **ADR 0005** — TLS verification on by default, CA pinning via
+  `OPNSENSE_CA_BUNDLE`.
+- **ADR 0006** — structural anti-lockout / management-path guard and
+  honest toggle failures.
+- **ADR 0007** — stdio-only transport; the SSE transport retired.

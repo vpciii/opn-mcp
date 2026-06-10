@@ -55,10 +55,10 @@ actionable error on verification failure naming both remedies.
 
 ---
 
-## Task 3 `[~]` — Structural anti-lockout guard + honest failure reporting
+## Task 3 `[x]` — Structural anti-lockout guard + honest failure reporting
 
 - **Depends on:** Task 1
-- **PR:** #9
+- **PR:** #9 (merged)
 
 **What:** Replace the dead text guard with the structural check
 (`lockout_*` uuid prefix primary, `is_automatic` secondary; refuse
@@ -78,7 +78,7 @@ port); report `{"result": "failed"}` as an error and skip apply.
 
 ---
 
-## Task 4 — Retire the SSE transport
+## Task 4 `[~]` — Retire the SSE transport
 
 - **Depends on:** Task 1
 - **PR:** —

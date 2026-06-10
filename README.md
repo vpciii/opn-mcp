@@ -99,27 +99,20 @@ or private-CA certificate, point `OPNSENSE_CA_BUNDLE` at its CA certificate
 path. To disable verification explicitly instead (not recommended), set
 `OPNSENSE_VERIFY_SSL=false`. (ADR 0005)
 
-### Run with SSE Transport (Remote Access)
+### Remote access
 
-To run as a persistent service reachable over Tailscale or LAN:
+The server is **stdio-only** and opens no network listener (ADR 0007).
+To use it from another machine, run the stdio server over your own
+channel — e.g. SSH to the host that runs it:
 
 ```bash
-docker compose up -d
+claude mcp add opnsense -- ssh user@host docker run -i --rm \
+  -e OPNSENSE_HOST=... -e OPNSENSE_API_KEY=... -e OPNSENSE_API_SECRET=... opn-mcp
 ```
 
-This starts the server with SSE transport on port 8000. Connect from Claude Desktop:
-
-```json
-{
-  "mcpServers": {
-    "opnsense": {
-      "url": "http://<tailscale-ip-or-hostname>:8000/sse"
-    }
-  }
-}
-```
-
-Note: the `docker-compose.yml` uses a `.env` file — copy `.env.example` and fill in your values.
+(The former SSE transport carried no authentication of its own; a
+future remote transport, if ever needed, gets its own ADR with auth
+designed in.)
 
 ### Run Locally (without Docker)
 
@@ -128,12 +121,11 @@ pip install .
 python server.py
 ```
 
-Pass `--sse` to use SSE transport instead of stdio.
-
 ### Claude Code
 
 ```bash
-claude mcp add opnsense http://localhost:8000/sse
+claude mcp add opnsense -- docker run -i --rm \
+  -e OPNSENSE_HOST=... -e OPNSENSE_API_KEY=... -e OPNSENSE_API_SECRET=... opn-mcp
 ```
 
 ## Hands-off monitoring
@@ -147,7 +139,7 @@ See **[docs/MONITORING.md](docs/MONITORING.md)** for the full setup: architectur
 - Most tools are **read-only** — the only write operation is `toggle_dnat_rule`, which can enable/disable existing DNAT rules
 - Anti-lockout rules are refused structurally (synthetic `lockout_*` rows / `is_automatic`), and so are rules covering the firewall's own management path — its own address on the API port this server uses (ADR 0006)
 - TLS verification is on by default; self-signed/private-CA certs are supported via `OPNSENSE_CA_BUNDLE`, and `OPNSENSE_VERIFY_SSL=false` is the explicit opt-out (ADR 0005)
-- The server defaults to stdio transport (for Claude Desktop via Docker), pass `--sse` for remote access
+- The server is stdio-only — no network listener; remote use goes over your own channel, e.g. SSH (ADR 0007)
 - Some endpoints may not be available depending on your OPNsense version and installed plugins
 
 ## Troubleshooting

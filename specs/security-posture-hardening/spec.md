@@ -169,7 +169,7 @@ marked `Implemented`. CI's coverage check governs this table.
 
 | Criterion | Requirement(s) | Verified by (test) |
 |---|---|---|
-| SC-1 | R-1 | _TBD_ |
+| SC-1 | R-1 | `tests/test_transport.py::test_sse_flag_exits_with_error`, `tests/test_transport.py::test_main_only_ever_runs_stdio` |
 | SC-2 | R-2 | `tests/test_tls.py::test_default_settings_verify_tls`, `tests/test_tls.py::test_explicit_false_still_opts_out` |
 | SC-3 | R-3 | `tests/test_tls.py::test_ca_bundle_connects_to_private_ca_server` |
 | SC-4 | R-4 | `tests/test_tls.py::test_verification_failure_message_names_remedies` |
