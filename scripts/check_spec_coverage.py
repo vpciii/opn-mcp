@@ -7,6 +7,8 @@ ADR 0017) — unmodified apart from this header. Verifies the
 traceability rules of methodology §5 (ADR 0006, 0011) for every spec
 whose status makes coverage mandatory:
 
+  1. every success criterion (SC-n) maps to at least one test in the
+     spec's Traceability table;
   2. every MUST / MUST NOT requirement (R-n) is covered by at least
      one criterion in that table;
   3. every referenced test file exists and cites the SC id it
