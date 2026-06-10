@@ -177,4 +177,4 @@ marked `Implemented`. CI's coverage check governs this table.
 | SC-6 | R-6 | _TBD_ |
 | SC-7 | R-7 | _TBD_ |
 | SC-8 | R-8 | _TBD_ |
-| SC-9 | R-9, R-10 | _TBD_ |
+| SC-9 | R-9, R-10 | `tests/test_harness.py::test_suite_runs_async_against_mock_transport` (enforced by `.github/workflows/ci.yml`) |

@@ -1,6 +1,6 @@
 # Tasks: Security posture hardening
 
-- **Status:** Under review
+- **Status:** In progress
 - **Spec:** ./spec.md
 - **Plan:** ./plan.md
 
@@ -10,7 +10,7 @@ progress) → `[x]` (done, PR merged). Link the PR number when merged.
 
 ---
 
-## Task 1 — Bootstrap the test harness and CI
+## Task 1 `[~]` — Bootstrap the test harness and CI
 
 - **Depends on:** —
 - **PR:** —

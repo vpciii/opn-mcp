@@ -1,6 +1,6 @@
 # Plan: Security posture hardening
 
-- **Status:** Under review
+- **Status:** Approved
 - **Date:** 2026-06-09
 - **Author:** vpc (drafted with Claude)
 - **Spec:** ./spec.md
