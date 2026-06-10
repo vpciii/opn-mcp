@@ -13,6 +13,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - name: Install (locked)
         run: uv sync --frozen
+      # SC-9: the suite runs on every PR and push to main
       - name: Tests
         run: uv run pytest
       # Enforces the spec Traceability tables once a spec reaches
@@ -20,3 +21,7 @@ jobs:
       # Tighten with --include-approved to gate Approved specs too.
       - name: Spec-criterion coverage
         run: uv run python scripts/check_spec_coverage.py
+      # SC-8: the image installs the frozen uv.lock tree; a stale
+      # lockfile fails this build (uv sync --locked in the Dockerfile)
+      - name: Docker build (locked dependency tree)
+        run: docker build -t opn-mcp-ci .

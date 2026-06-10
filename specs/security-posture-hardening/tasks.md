@@ -78,10 +78,10 @@ port); report `{"result": "failed"}` as an error and skip apply.
 
 ---
 
-## Task 4 `[~]` — Retire the SSE transport
+## Task 4 `[x]` — Retire the SSE transport
 
 - **Depends on:** Task 1
-- **PR:** #10
+- **PR:** #10 (merged)
 
 **What:** Remove `--sse` handling (clear exit message naming the stdio
 alternative), delete `docker-compose.yml`, replace the README SSE
@@ -99,7 +99,7 @@ section with a remote-access-via-own-channel note.
 
 ---
 
-## Task 5 — Pin the Docker image to uv.lock
+## Task 5 `[~]` — Pin the Docker image to uv.lock
 
 - **Depends on:** Task 1
 - **PR:** —

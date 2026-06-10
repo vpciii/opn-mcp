@@ -1,6 +1,6 @@
 # Spec: Security posture hardening
 
-- **Status:** Approved
+- **Status:** Implemented
 - **Date:** 2026-06-09
 - **Author:** vpc (drafted with Claude)
 - **Related ADRs:** ADR-0002, ADR-0003, ADR-0004 (recorded posture being
@@ -176,5 +176,5 @@ marked `Implemented`. CI's coverage check governs this table.
 | SC-5 | R-5 | `tests/test_toggle_guard.py::test_synthetic_lockout_uuid_is_refused`, `tests/test_toggle_guard.py::test_dead_descr_guard_regression` |
 | SC-6 | R-6 | `tests/test_toggle_guard.py::test_rule_covering_own_ip_and_api_port_is_refused`, `tests/test_toggle_guard.py::test_rule_with_interface_ip_token_is_refused` |
 | SC-7 | R-7 | `tests/test_toggle_guard.py::test_failed_toggle_is_an_error_and_apply_is_skipped`, `tests/test_toggle_guard.py::test_missing_rule_is_an_error` |
-| SC-8 | R-8 | _TBD_ |
+| SC-8 | R-8 | `.github/workflows/ci.yml` (Docker build step; uv sync --locked fails on a stale lockfile — both halves demonstrated in task 5's PR) |
 | SC-9 | R-9, R-10 | `tests/test_harness.py::test_suite_runs_async_against_mock_transport` (enforced by `.github/workflows/ci.yml`) |
