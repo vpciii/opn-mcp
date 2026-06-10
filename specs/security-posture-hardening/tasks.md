@@ -13,7 +13,7 @@ progress) → `[x]` (done, PR merged). Link the PR number when merged.
 ## Task 1 `[~]` — Bootstrap the test harness and CI
 
 - **Depends on:** —
-- **PR:** —
+- **PR:** #7
 
 **What:** First tests in the repo: pytest + async runner + an
 `httpx.MockTransport` fixture; extract import-time config globals into
@@ -22,14 +22,15 @@ running pytest and the spec-coverage checker (adapted from the
 methodology reference, global ADR 0017).
 
 **Acceptance criteria:**
-- [ ] `tests/` runs green locally and in CI on this PR (SC-9)
-- [ ] Config function returns the same values for the same env as the
-      old globals (pinning test)
-- [ ] Dev dependencies added to `pyproject.toml` dev group; `uv.lock`
+- [x] `tests/` runs green locally and in CI on this PR (SC-9) — 5
+      passed; CI run 27246211591 green
+- [x] Config function returns the same values for the same env as the
+      old globals (pinning test: `tests/test_config.py`)
+- [x] Dev dependencies added to `pyproject.toml` dev group; `uv.lock`
       updated and committed
-- [ ] Spec-coverage checker wired in CI (governs this spec's
+- [x] Spec-coverage checker wired in CI (governs this spec's
       Traceability from `Implemented` onward)
-- [ ] Tests verifying a spec criterion cite its id; Traceability table
+- [x] Tests verifying a spec criterion cite its id; Traceability table
       updated (SC-9 row)
 
 ---
