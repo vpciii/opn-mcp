@@ -1,6 +1,6 @@
 # Tasks: Security posture hardening
 
-- **Status:** In progress
+- **Status:** Done
 - **Spec:** ./spec.md
 - **Plan:** ./plan.md
 
