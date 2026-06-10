@@ -58,7 +58,7 @@ actionable error on verification failure naming both remedies.
 ## Task 3 `[~]` — Structural anti-lockout guard + honest failure reporting
 
 - **Depends on:** Task 1
-- **PR:** —
+- **PR:** #9
 
 **What:** Replace the dead text guard with the structural check
 (`lockout_*` uuid prefix primary, `is_automatic` secondary; refuse
@@ -66,14 +66,15 @@ destinations matching the firewall's own IPv4s + the server's own API
 port); report `{"result": "failed"}` as an error and skip apply.
 
 **Acceptance criteria:**
-- [ ] SC-5, SC-6, SC-7 tests pass; red→green evidence cited in the PR
-      for the dead-guard and success-masking fixes (global ADR 0015)
-- [ ] Pass-through case tested: an ordinary rule still toggles
-- [ ] `docs/glossary.md` anti-lockout entry updated in this PR (it
-      currently describes the string match)
-- [ ] ADR 0006 (structural guard + honest failures; supersedes the
-      guard mechanism of ADR 0003) included
-- [ ] Traceability updated
+- [x] SC-5, SC-6, SC-7 tests pass; red→green evidence cited in the PR
+      for the dead-guard and success-masking fixes (global ADR 0015) —
+      red: 6 failed; green: 16 passed; CI run 27246753876
+- [x] Pass-through case tested: an ordinary rule still toggles
+      (`test_ordinary_rule_still_toggles`)
+- [x] `docs/glossary.md` anti-lockout entry updated in this PR
+- [x] ADR 0006 (structural guard + honest failures; supersedes the
+      guard mechanism of ADR 0003) included; ADR 0003 status noted
+- [x] Traceability updated (SC-5/6/7 rows)
 
 ---
 
