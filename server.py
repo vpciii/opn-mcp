@@ -7,7 +7,7 @@ import re
 import ssl
 import time
 from datetime import datetime
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, NoReturn
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -22,6 +22,7 @@ class Settings(NamedTuple):
     api_key: str
     api_secret: str
     verify_ssl: bool
+    ca_bundle: str | None
 
     @property
     def base_url(self) -> str:
@@ -32,15 +33,56 @@ def _settings() -> Settings:
     """Read connection settings from the environment.
 
     Read at call time (not import time) so tests can vary the
-    environment per case. Env names and defaults are unchanged from
-    the original module-level constants.
+    environment per case. TLS verification is on unless explicitly
+    opted out with OPNSENSE_VERIFY_SSL=false — fail-safe: any other
+    value verifies (spec R-2, ADR 0005).
     """
     return Settings(
         host=os.environ.get("OPNSENSE_HOST", "192.168.1.1"),
         api_key=os.environ.get("OPNSENSE_API_KEY", ""),
         api_secret=os.environ.get("OPNSENSE_API_SECRET", ""),
-        verify_ssl=os.environ.get("OPNSENSE_VERIFY_SSL", "false").lower() == "true",
+        verify_ssl=os.environ.get("OPNSENSE_VERIFY_SSL", "true").strip().lower()
+        != "false",
+        ca_bundle=os.environ.get("OPNSENSE_CA_BUNDLE") or None,
     )
+
+
+def _tls_verify(s: Settings) -> bool | ssl.SSLContext:
+    """Build the TLS verification parameter for the API client.
+
+    OPNSENSE_CA_BUNDLE pins a self-signed / private CA via an ssl
+    context cafile (spec R-3) — not the deprecated httpx verify=<path>
+    form, and not SSL_CERT_FILE, which httpx ignores under
+    trust_env=False.
+    """
+    if not s.verify_ssl:
+        # Explicit opt-out: a context that doesn't verify certificates
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    if s.ca_bundle:
+        return ssl.create_default_context(cafile=s.ca_bundle)
+    return True
+
+
+def _reraise_with_tls_hint(e: httpx.TransportError) -> NoReturn:
+    """Re-raise a transport error; certificate-verification failures
+    get an actionable message naming both remedies (spec R-4)."""
+    cause: BaseException | None = e
+    seen: set[int] = set()
+    while cause is not None and id(cause) not in seen:
+        seen.add(id(cause))
+        if isinstance(cause, ssl.SSLCertVerificationError):
+            raise RuntimeError(
+                f"TLS certificate verification failed for the OPNsense API ({cause}). "
+                "If OPNsense uses a self-signed or private-CA certificate, set "
+                "OPNSENSE_CA_BUNDLE to the path of its CA certificate (PEM). "
+                "To disable verification explicitly instead (not recommended), "
+                "set OPNSENSE_VERIFY_SSL=false."
+            ) from e
+        cause = cause.__cause__ or cause.__context__
+    raise e
 
 
 mcp = FastMCP("opn-mcp")
@@ -49,18 +91,10 @@ mcp = FastMCP("opn-mcp")
 def _client() -> httpx.AsyncClient:
     """Create an httpx client configured for the OPNsense API."""
     s = _settings()
-    verify: bool | ssl.SSLContext = s.verify_ssl
-    if not s.verify_ssl:
-        # Create an SSL context that doesn't verify certificates
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        verify = ctx
-
     return httpx.AsyncClient(
         base_url=s.base_url,
         auth=(s.api_key, s.api_secret),
-        verify=verify,
+        verify=_tls_verify(s),
         timeout=30.0,
         # Ignore HTTP(S)_PROXY / NO_PROXY env vars. The OPNsense API is on the
         # LAN and shouldn't be routed through a proxy. This also avoids httpx
@@ -73,7 +107,10 @@ def _client() -> httpx.AsyncClient:
 async def _get(path: str) -> dict | list | str:
     """Make a GET request to the OPNsense API."""
     async with _client() as client:
-        resp = await client.get(path)
+        try:
+            resp = await client.get(path)
+        except httpx.TransportError as e:
+            _reraise_with_tls_hint(e)
         resp.raise_for_status()
         return resp.json()
 
@@ -81,7 +118,10 @@ async def _get(path: str) -> dict | list | str:
 async def _post(path: str, json: dict | None = None) -> dict | list | str:
     """Make a POST request to the OPNsense API (used for some read-only diagnostics)."""
     async with _client() as client:
-        resp = await client.post(path, json=json or {})
+        try:
+            resp = await client.post(path, json=json or {})
+        except httpx.TransportError as e:
+            _reraise_with_tls_hint(e)
         resp.raise_for_status()
         return resp.json()
 

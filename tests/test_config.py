@@ -1,20 +1,21 @@
-"""Pin the configuration contract (task 1: behavior-preserving extraction).
+"""Pin the configuration contract.
 
-These tests pin the env names, defaults, and parsing that the old
-module-level constants implemented, so the extraction to _settings()
-is provably behavior-preserving. The verify_ssl default characterized
-here is the *current* contract; task 2 (SC-2) changes it deliberately.
+Task 1 characterized the old contract to prove the extraction to
+_settings() behavior-preserving. Task 2 (SC-2, ADR 0005) deliberately
+changed the verify_ssl default to true and added ca_bundle; the pins
+below reflect the new contract.
 """
 
 import server
 
 
-def test_defaults_match_old_module_constants(clean_env):
+def test_defaults(clean_env):
     s = server._settings()
     assert s.host == "192.168.1.1"
     assert s.api_key == ""
     assert s.api_secret == ""
-    assert s.verify_ssl is False
+    assert s.verify_ssl is True  # secure default since ADR 0005 (SC-2)
+    assert s.ca_bundle is None
     assert s.base_url == "https://192.168.1.1/api"
 
 
@@ -34,15 +35,19 @@ def test_env_values_are_read_per_call(clean_env):
     assert server._settings().host == "other.example.test"
 
 
-def test_verify_ssl_parsing_is_case_insensitive_true_only(clean_env):
+def test_verify_ssl_disabled_only_by_explicit_false(clean_env):
+    # Fail-safe parsing (R-2): anything except the literal "false"
+    # verifies, so a typo can't silently disable verification.
     for raw, expected in (
         ("true", True),
         ("TRUE", True),
-        ("True", True),
         ("false", False),
-        ("1", False),  # old contract: only the literal "true" enables
-        ("yes", False),
-        ("", False),
+        ("FALSE", False),
+        (" false ", False),
+        ("1", True),
+        ("yes", True),
+        ("no", True),
+        ("", True),
     ):
         clean_env.setenv("OPNSENSE_VERIFY_SSL", raw)
         assert server._settings().verify_ssl is expected, raw

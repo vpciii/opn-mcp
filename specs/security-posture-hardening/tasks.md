@@ -10,10 +10,10 @@ progress) → `[x]` (done, PR merged). Link the PR number when merged.
 
 ---
 
-## Task 1 `[~]` — Bootstrap the test harness and CI
+## Task 1 `[x]` — Bootstrap the test harness and CI
 
 - **Depends on:** —
-- **PR:** #7
+- **PR:** #7 (merged)
 
 **What:** First tests in the repo: pytest + async runner + an
 `httpx.MockTransport` fixture; extract import-time config globals into
@@ -35,22 +35,23 @@ methodology reference, global ADR 0017).
 
 ---
 
-## Task 2 — TLS verification on by default + CA bundle
+## Task 2 `[~]` — TLS verification on by default + CA bundle
 
 - **Depends on:** Task 1
-- **PR:** —
+- **PR:** #8
 
 **What:** Flip `OPNSENSE_VERIFY_SSL` default to `true`; add
 `OPNSENSE_CA_BUNDLE` via `ssl.create_default_context(cafile=...)`;
 actionable error on verification failure naming both remedies.
 
 **Acceptance criteria:**
-- [ ] SC-2, SC-3, SC-4 tests pass; Traceability updated
-- [ ] `README.md` TLS notes and `.env.example` updated in this PR
-- [ ] ADR 0005 (TLS verification posture; supersedes that part of
+- [x] SC-2, SC-3, SC-4 tests pass; Traceability updated — red run:
+      4 failed pre-change; green: 9 passed; CI run 27246481056
+- [x] `README.md` TLS notes and `.env.example` updated in this PR
+- [x] ADR 0005 (TLS verification posture; supersedes that part of
       ADR 0002) included
-- [ ] Breaking-change callout in the PR description (self-signed
-      setups without a bundle)
+- [x] Breaking-change callout in the PR description (self-signed
+      setups without a bundle) — `feat!:` + BREAKING CHANGE footer
 
 ---
 
