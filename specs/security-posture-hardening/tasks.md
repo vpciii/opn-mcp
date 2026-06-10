@@ -125,5 +125,8 @@ claim.
       now that the spec is `Implemented` — and proved it by catching a
       malformed cell pre-push)
 - [x] Spec and plan statuses → `Implemented` (frozen)
-- [ ] Rebuild the live `opn-mcp` image once (rollout step from
-      plan.md); MCP client config unchanged — after PR #11 merges
+- [x] Rebuild the live `opn-mcp` image once (rollout step from
+      plan.md); MCP client config unchanged — done 2026-06-10 after
+      PR #11 merged (image 400a7d4d → 3d347fab; smoke-tested: imports
+      OK, verify_ssl defaults true, --sse exits with the ADR 0007
+      retirement message)
