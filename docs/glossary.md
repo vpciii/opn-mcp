@@ -12,7 +12,7 @@ relationships and any deliberately-excluded near-synonyms.
 |---|---|---|
 | DNAT rule | A Destination NAT (port-forward) rule on the firewall, listed by `get_dnat_rules` and toggled by UUID via `toggle_dnat_rule`. | Not an SNAT rule; the only thing the server can mutate. |
 | SNAT rule | A Source NAT (outbound) rule, listed by `get_snat_rules`. | Read-only here. |
-| anti-lockout rule | A rule whose description contains `anti-lockout` / `antilockout`; `toggle_dnat_rule` refuses to modify it. | Protection is a description string match, not structural — see ADR 0003. |
+| anti-lockout rule | OPNsense's automatic protection of management access, surfacing in the d_nat API as synthetic `lockout_<n>` rows; `toggle_dnat_rule` refuses them structurally (uuid prefix / `is_automatic`), never by description text. | See ADR 0006 (supersedes the string-match mechanism of ADR 0003). Related: the management-path guard, which also refuses rules covering the firewall's own address on the API port. |
 | security digest | The aggregated output of `get_security_digest`: auth, blocks, services, updates, certs, pf states, config changes, plus a `warnings` list. | The primary "is anything wrong?" call. |
 | warnings | The digest's list of anomaly strings; empty means `status: "ok"`. | Scheduled tasks key on this list, after false-positive filtering. |
 | WAN-origin (block) | A pf block whose source IP is public — external scan/brute-force, the real attack signal. | Only WAN-origin blocks feed the digest's scan/flood thresholds. |

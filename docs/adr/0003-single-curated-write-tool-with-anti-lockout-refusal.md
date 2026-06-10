@@ -1,6 +1,6 @@
 # ADR 0003: Single curated write tool with anti-lockout refusal
 
-- **Status:** Accepted
+- **Status:** Accepted — guard-mechanism portion superseded by ADR 0006
 - **Date:** 2026-06-09
 - **Deciders:** Vince Ciganik
 

@@ -173,8 +173,8 @@ marked `Implemented`. CI's coverage check governs this table.
 | SC-2 | R-2 | `tests/test_tls.py::test_default_settings_verify_tls`, `tests/test_tls.py::test_explicit_false_still_opts_out` |
 | SC-3 | R-3 | `tests/test_tls.py::test_ca_bundle_connects_to_private_ca_server` |
 | SC-4 | R-4 | `tests/test_tls.py::test_verification_failure_message_names_remedies` |
-| SC-5 | R-5 | _TBD_ |
-| SC-6 | R-6 | _TBD_ |
-| SC-7 | R-7 | _TBD_ |
+| SC-5 | R-5 | `tests/test_toggle_guard.py::test_synthetic_lockout_uuid_is_refused`, `tests/test_toggle_guard.py::test_dead_descr_guard_regression` |
+| SC-6 | R-6 | `tests/test_toggle_guard.py::test_rule_covering_own_ip_and_api_port_is_refused`, `tests/test_toggle_guard.py::test_rule_with_interface_ip_token_is_refused` |
+| SC-7 | R-7 | `tests/test_toggle_guard.py::test_failed_toggle_is_an_error_and_apply_is_skipped`, `tests/test_toggle_guard.py::test_missing_rule_is_an_error` |
 | SC-8 | R-8 | _TBD_ |
 | SC-9 | R-9, R-10 | `tests/test_harness.py::test_suite_runs_async_against_mock_transport` (enforced by `.github/workflows/ci.yml`) |
