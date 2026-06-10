@@ -78,10 +78,10 @@ port); report `{"result": "failed"}` as an error and skip apply.
 
 ---
 
-## Task 4 `[~]` — Retire the SSE transport
+## Task 4 `[x]` — Retire the SSE transport
 
 - **Depends on:** Task 1
-- **PR:** #10
+- **PR:** #10 (merged)
 
 **What:** Remove `--sse` handling (clear exit message naming the stdio
 alternative), delete `docker-compose.yml`, replace the README SSE
@@ -99,27 +99,31 @@ section with a remote-access-via-own-channel note.
 
 ---
 
-## Task 5 — Pin the Docker image to uv.lock
+## Task 5 `[~]` — Pin the Docker image to uv.lock
 
 - **Depends on:** Task 1
-- **PR:** —
+- **PR:** #11
 
 **What:** Dockerfile installs the frozen `uv.lock` tree (build fails on
 a stale lockfile), closing the drift against ADR 0004's pinned-tree
 claim.
 
 **Acceptance criteria:**
-- [ ] SC-8 verified (frozen install; stale lockfile fails the build) —
-      via CI build step or documented local check cited in the PR;
-      Traceability updated
-- [ ] No new ADR (reality now matches what ADR 0004 already records)
+- [x] SC-8 verified (frozen install; stale lockfile fails the build) —
+      both halves demonstrated locally and cited in PR #11; CI gains a
+      docker-build step (run 27247259130 green); Traceability updated.
+      Note: `uv sync --locked` is the staleness gate — `--frozen` does
+      not check, which the negative test caught.
+- [x] No new ADR (reality now matches what ADR 0004 already records)
 
 ---
 
-## Wrap-up (with the last task's PR or its own tiny PR)
+## Wrap-up (rode with task 5's PR #11)
 
-- [ ] Every criterion in the spec's Traceability table maps to a
-      passing test; coverage check green in CI
-- [ ] Spec and plan statuses → `Implemented` (freeze)
+- [x] Every criterion in the spec's Traceability table maps to a
+      passing test; coverage check green in CI (the checker enforces
+      now that the spec is `Implemented` — and proved it by catching a
+      malformed cell pre-push)
+- [x] Spec and plan statuses → `Implemented` (frozen)
 - [ ] Rebuild the live `opn-mcp` image once (rollout step from
-      plan.md); MCP client config unchanged
+      plan.md); MCP client config unchanged — after PR #11 merges
