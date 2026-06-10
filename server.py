@@ -7,27 +7,50 @@ import re
 import ssl
 import time
 from datetime import datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 import httpx
 from mcp.server.fastmcp import FastMCP
 
 # --- Configuration ---
 
-OPNSENSE_HOST = os.environ.get("OPNSENSE_HOST", "192.168.1.1")
-OPNSENSE_API_KEY = os.environ.get("OPNSENSE_API_KEY", "")
-OPNSENSE_API_SECRET = os.environ.get("OPNSENSE_API_SECRET", "")
-OPNSENSE_VERIFY_SSL = os.environ.get("OPNSENSE_VERIFY_SSL", "false").lower() == "true"
 
-BASE_URL = f"https://{OPNSENSE_HOST}/api"
+class Settings(NamedTuple):
+    """Connection settings for the OPNsense API."""
+
+    host: str
+    api_key: str
+    api_secret: str
+    verify_ssl: bool
+
+    @property
+    def base_url(self) -> str:
+        return f"https://{self.host}/api"
+
+
+def _settings() -> Settings:
+    """Read connection settings from the environment.
+
+    Read at call time (not import time) so tests can vary the
+    environment per case. Env names and defaults are unchanged from
+    the original module-level constants.
+    """
+    return Settings(
+        host=os.environ.get("OPNSENSE_HOST", "192.168.1.1"),
+        api_key=os.environ.get("OPNSENSE_API_KEY", ""),
+        api_secret=os.environ.get("OPNSENSE_API_SECRET", ""),
+        verify_ssl=os.environ.get("OPNSENSE_VERIFY_SSL", "false").lower() == "true",
+    )
+
 
 mcp = FastMCP("opn-mcp")
 
 
 def _client() -> httpx.AsyncClient:
     """Create an httpx client configured for the OPNsense API."""
-    verify: bool | ssl.SSLContext = OPNSENSE_VERIFY_SSL
-    if not OPNSENSE_VERIFY_SSL:
+    s = _settings()
+    verify: bool | ssl.SSLContext = s.verify_ssl
+    if not s.verify_ssl:
         # Create an SSL context that doesn't verify certificates
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
@@ -35,8 +58,8 @@ def _client() -> httpx.AsyncClient:
         verify = ctx
 
     return httpx.AsyncClient(
-        base_url=BASE_URL,
-        auth=(OPNSENSE_API_KEY, OPNSENSE_API_SECRET),
+        base_url=s.base_url,
+        auth=(s.api_key, s.api_secret),
         verify=verify,
         timeout=30.0,
         # Ignore HTTP(S)_PROXY / NO_PROXY env vars. The OPNsense API is on the
