@@ -145,7 +145,7 @@ See **[docs/MONITORING.md](docs/MONITORING.md)** for the full setup: architectur
 ## Notes
 
 - Most tools are **read-only** — the only write operation is `toggle_dnat_rule`, which can enable/disable existing DNAT rules
-- Anti-lockout rules are protected and cannot be toggled
+- Anti-lockout rules are refused structurally (synthetic `lockout_*` rows / `is_automatic`), and so are rules covering the firewall's own management path — its own address on the API port this server uses (ADR 0006)
 - TLS verification is on by default; self-signed/private-CA certs are supported via `OPNSENSE_CA_BUNDLE`, and `OPNSENSE_VERIFY_SSL=false` is the explicit opt-out (ADR 0005)
 - The server defaults to stdio transport (for Claude Desktop via Docker), pass `--sse` for remote access
 - Some endpoints may not be available depending on your OPNsense version and installed plugins

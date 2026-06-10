@@ -35,10 +35,10 @@ methodology reference, global ADR 0017).
 
 ---
 
-## Task 2 `[~]` — TLS verification on by default + CA bundle
+## Task 2 `[x]` — TLS verification on by default + CA bundle
 
 - **Depends on:** Task 1
-- **PR:** #8
+- **PR:** #8 (merged)
 
 **What:** Flip `OPNSENSE_VERIFY_SSL` default to `true`; add
 `OPNSENSE_CA_BUNDLE` via `ssl.create_default_context(cafile=...)`;
@@ -55,7 +55,7 @@ actionable error on verification failure naming both remedies.
 
 ---
 
-## Task 3 — Structural anti-lockout guard + honest failure reporting
+## Task 3 `[~]` — Structural anti-lockout guard + honest failure reporting
 
 - **Depends on:** Task 1
 - **PR:** —

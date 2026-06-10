@@ -431,27 +431,120 @@ async def get_snat_rules() -> dict:
         return _error(f"Failed to get SNAT rules: {_fmt_exc(e)}")
 
 
+def _api_port() -> str:
+    """The TCP port this server uses to reach the OPNsense API."""
+    host = _settings().host
+    if ":" in host:
+        return host.rsplit(":", 1)[1]
+    return "443"
+
+
+def _option_str(value: Any) -> str:
+    """Flatten an MVC field value: plain text, or a selected-option map."""
+    if isinstance(value, dict):
+        return ",".join(
+            k for k, v in value.items() if isinstance(v, dict) and v.get("selected")
+        )
+    return str(value or "")
+
+
+def _port_covers(port_field: str, api_port: str) -> bool:
+    """True if a rule's destination port field covers the API port.
+
+    An empty field means any port, which covers it. Handles single
+    ports, comma lists, and numeric ranges; named aliases don't match
+    (they can't be resolved without another API round-trip).
+    """
+    tokens = [t.strip() for t in str(port_field).split(",") if t.strip()]
+    if not tokens:
+        return True
+    for token in tokens:
+        if token == api_port:
+            return True
+        a, sep, b = token.partition("-")
+        if sep and a.strip().isdigit() and b.strip().isdigit() and api_port.isdigit():
+            if int(a.strip()) <= int(api_port) <= int(b.strip()):
+                return True
+    return False
+
+
+def _covers_management_path(rule_data: dict, own_ips: set[str], api_port: str) -> bool:
+    """True if the rule's destination covers the firewall's own
+    management path — its own address space on the API port this
+    server uses (spec R-6, ADR 0006)."""
+    dest = rule_data.get("destination")
+    if not isinstance(dest, dict):
+        return False
+    if not _port_covers(_option_str(dest.get("port")), api_port):
+        return False
+    network = _option_str(dest.get("network")).strip().lower()
+    if network in ("", "any", "(self)", "self"):
+        return True
+    if network.endswith("ip"):
+        # wanip / lanip / opt1ip tokens resolve to the firewall's own
+        # interface address
+        return True
+    if network in own_ips:
+        return True
+    try:
+        net = ipaddress.ip_network(network, strict=False)
+    except ValueError:
+        return False
+    return any(ipaddress.ip_address(ip) in net for ip in own_ips)
+
+
 @mcp.tool()
 async def toggle_dnat_rule(uuid: str, enabled: bool) -> dict:
-    """Enable or disable a Destination NAT rule by UUID. Anti-lockout rules cannot be modified."""
+    """Enable or disable a Destination NAT rule by UUID. Anti-lockout rules and
+    rules covering the firewall's own management path cannot be toggled (ADR 0006)."""
     try:
+        # OPNsense's anti-lockout protections surface as synthetic
+        # lockout_<n> rows in searchRule; they are not real model rules.
+        # The guard is structural — descr text is locale-dependent and
+        # was never a reliable marker (ADR 0006).
+        if uuid.strip().lower().startswith("lockout_"):
+            return _error(
+                "Refusing to modify anti-lockout rule: synthetic system rule "
+                "(structural guard, ADR 0006)."
+            )
+
         async with _client() as client:
-            # Fetch the rule first to check for anti-lockout
             r = await client.get(f"/firewall/d_nat/getRule/{uuid}")
             r.raise_for_status()
-            rule = r.json()
-
-            # Check for anti-lockout rules
-            rule_data = rule.get("rule", rule)
-            description = str(rule_data.get("description", "")).lower()
-            if "anti-lockout" in description or "antilockout" in description:
-                return _error("Refusing to modify anti-lockout rule.")
+            payload = r.json()
+            rule_data = payload.get("rule", payload) if isinstance(payload, dict) else {}
+            if not rule_data:
+                return _error(f"DNAT rule {uuid} not found.")
+            if _option_str(rule_data.get("is_automatic")).strip().lower() in ("1", "true"):
+                return _error(
+                    "Refusing to modify anti-lockout rule: automatic system rule "
+                    "(structural guard, ADR 0006)."
+                )
+            if _covers_management_path(
+                rule_data, await _own_ipv4_addresses(), _api_port()
+            ):
+                return _error(
+                    f"Refusing to toggle rule {uuid}: its destination covers the "
+                    "firewall's own management path (the firewall's address on "
+                    "the API port this server uses). Manage it in the OPNsense "
+                    "GUI instead (ADR 0006)."
+                )
 
             # Toggle: disabled=0 means enabled, disabled=1 means disabled
             disabled = "0" if enabled else "1"
             r = await client.post(f"/firewall/d_nat/toggleRule/{uuid}/{disabled}")
             r.raise_for_status()
             toggle_result = r.json()
+            outcome = ""
+            if isinstance(toggle_result, dict):
+                outcome = str(toggle_result.get("result", "")).strip().lower()
+            if not outcome or outcome == "failed":
+                # OPNsense refused server-side; report it as the failure
+                # it is and never apply (spec R-7)
+                return _error(
+                    f"OPNsense refused to toggle rule {uuid} (response: "
+                    f"{toggle_result!r}). No changes were applied."
+                )
 
             # Apply the changes so they take effect
             r = await client.post("/firewall/d_nat/apply")
