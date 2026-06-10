@@ -59,8 +59,7 @@ for everything the tools report.
 
 ## External dependencies
 
-No dependency ADRs exist yet; these are baked-in decisions awaiting
-decision-capture ADRs (`adopting.md` seed step 3).
+Recorded as a decision-capture ADR: `docs/adr/0004`.
 
 - **OPNsense REST API** — the only external service; every tool is a
   view over it. Endpoint availability varies with OPNsense version and
@@ -74,8 +73,8 @@ decision-capture ADRs (`adopting.md` seed step 3).
 
 ## Trust boundaries
 
-No ADRs record these yet — stated from the code; all are candidates for
-decision-capture ADRs.
+Recorded as decision-capture ADRs: `docs/adr/0002` (credentials,
+TLS verify, SSE) and `docs/adr/0003` (write surface).
 
 - **MCP client → server.** Untrusted/LLM-driven input enters here (tool
   arguments, e.g. `ping_host(target)`, `get_log` filters,
@@ -97,9 +96,16 @@ decision-capture ADRs.
 
 ## Shape-defining decisions
 
-`docs/adr/` contains no numbered ADRs yet. The load-bearing decisions
-already baked in — single-file stateless proxy, env-var-only secrets,
-primarily-read-only tool surface with the anti-lockout guard,
-unauthenticated SSE relying on network placement, TLS-verify-off
-default — should each get a short decision-capture ADR (`adopting.md`
-seed step 3) and be listed here as they land.
+Decision-capture ADRs (`adopting.md` seed step 3), each recording a
+pre-existing decision:
+
+- **ADR 0001** — stateless single-module MCP proxy over the OPNsense
+  REST API (stdio default, SSE opt-in).
+- **ADR 0002** — credential and transport security posture (env-var
+  secrets, `trust_env=False`, TLS-verify-off default, unauthenticated
+  SSE relying on network placement); the two defaults are flagged as
+  candidates for superseding ADRs.
+- **ADR 0003** — single curated write tool (`toggle_dnat_rule`) with
+  anti-lockout refusal.
+- **ADR 0004** — runtime dependencies and packaging (`mcp[cli]`,
+  `httpx`, uv lockfile, Docker/compose).
