@@ -1,6 +1,6 @@
 # Spec: Security posture hardening
 
-- **Status:** Draft
+- **Status:** Approved
 - **Date:** 2026-06-09
 - **Author:** vpc (drafted with Claude)
 - **Related ADRs:** ADR-0002, ADR-0003, ADR-0004 (recorded posture being
@@ -138,16 +138,21 @@ Ids are append-only — never reuse or renumber.
 
 ## Open questions
 
-- [ ] Confirm the live OPNsense version is ≥ 26.1 (the d_nat MVC API
-  with synthetic `lockout_*` rows). All evidence says yes (the repo has
-  used the d_nat API since creation); verify against the box before
-  implementation starts.
-- [ ] Confirm the `descr`-vs-`description` field finding against the
-  live API (investigation was from upstream source, not the running
-  box). The regression test for the dead guard depends on it.
-- [ ] `docker-compose.yml`: remove entirely, or convert to a stdio
-  service? It is stale either way (SSE command, IP-address host, dead
-  port map). Leaning remove — the live deployment doesn't use it.
+All resolved 2026-06-09:
+
+- [x] Live OPNsense version ≥ 26.1 — **confirmed**: the box runs
+  26.1.9, and `/firewall/d_nat/searchRule` returns synthetic
+  `lockout_0/1/2` rows. Note for implementation: `is_automatic` was
+  `null` (not `true`) on the live rows, so the structural guard keys
+  primarily on the `lockout_*` uuid prefix (R-5 permits either marker).
+- [x] `descr` vs `description` — **confirmed against the live API**:
+  rule rows carry `descr`; no `description` key exists. The dead-guard
+  regression test stands on solid ground. (Upstream also marks the
+  `descr` text gettext-translatable, so it is locale-dependent — a
+  further reason text matching was never viable.)
+- [x] `docker-compose.yml` — **remove entirely** (owner's decision,
+  2026-06-09); the live deployment runs `docker run` stdio via the MCP
+  client config.
 
 ## Out of scope (for now)
 
