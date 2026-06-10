@@ -5,6 +5,7 @@ import ipaddress
 import os
 import re
 import ssl
+import sys
 import time
 from datetime import datetime
 from typing import Any, NamedTuple, NoReturn
@@ -1415,8 +1416,21 @@ async def get_routes() -> dict:
         return _error(f"Failed to get routes: {_fmt_exc(e)}")
 
 
-if __name__ == "__main__":
-    import sys
+def main(argv: list[str] | None = None) -> None:
+    """Run the stdio MCP server.
 
-    transport = "sse" if "--sse" in sys.argv else "stdio"
-    mcp.run(transport=transport)
+    The server opens no network listener (spec R-1, ADR 0007).
+    """
+    args = sys.argv[1:] if argv is None else argv
+    if "--sse" in args:
+        sys.exit(
+            "The SSE transport was retired (ADR 0007): this server is "
+            "stdio-only and opens no network listener. For remote use, run "
+            "the stdio server over your own channel — e.g. SSH or Tailscale "
+            "to the host that runs it."
+        )
+    mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()

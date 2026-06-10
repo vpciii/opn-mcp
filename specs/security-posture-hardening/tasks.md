@@ -55,10 +55,10 @@ actionable error on verification failure naming both remedies.
 
 ---
 
-## Task 3 `[~]` — Structural anti-lockout guard + honest failure reporting
+## Task 3 `[x]` — Structural anti-lockout guard + honest failure reporting
 
 - **Depends on:** Task 1
-- **PR:** #9
+- **PR:** #9 (merged)
 
 **What:** Replace the dead text guard with the structural check
 (`lockout_*` uuid prefix primary, `is_automatic` secondary; refuse
@@ -78,21 +78,24 @@ port); report `{"result": "failed"}` as an error and skip apply.
 
 ---
 
-## Task 4 — Retire the SSE transport
+## Task 4 `[~]` — Retire the SSE transport
 
 - **Depends on:** Task 1
-- **PR:** —
+- **PR:** #10
 
 **What:** Remove `--sse` handling (clear exit message naming the stdio
 alternative), delete `docker-compose.yml`, replace the README SSE
 section with a remote-access-via-own-channel note.
 
 **Acceptance criteria:**
-- [ ] SC-1 test passes; Traceability updated
-- [ ] `docker-compose.yml` deleted; `README.md`, `docs/MONITORING.md`,
-      `docs/architecture.md` updated in this PR
-- [ ] ADR 0007 (stdio-only transport; supersedes that part of
-      ADR 0002) included
+- [x] SC-1 test passes; Traceability updated — red: 2 failed; green:
+      18 passed; CI run 27247000529
+- [x] `docker-compose.yml` deleted; `README.md` and
+      `docs/architecture.md` updated in this PR (MONITORING.md needed
+      no changes — its only matches were unrelated; architecture.md
+      also caught up TLS/guard drift from tasks 2–3, noted in the PR)
+- [x] ADR 0007 (stdio-only transport; supersedes that part of
+      ADR 0002) included; ADR 0002 status noted
 
 ---
 
