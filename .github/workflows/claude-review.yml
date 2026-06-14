@@ -1,0 +1,20 @@
+# Shared Claude PR reviewer (methodology ADR 0021): calls the reusable
+# workflow in vpciii/methodology. Advisory — the deterministic CI in ci.yml
+# stays the required merge gate. Requires an ANTHROPIC_API_KEY repo secret and
+# the Claude GitHub App installed on the account.
+name: Claude review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  review:
+    uses: vpciii/methodology/.github/workflows/claude-review.yml@main
+    secrets:
+      anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
