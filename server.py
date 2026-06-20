@@ -791,7 +791,12 @@ async def get_updates_available(refresh: bool = False) -> dict:
         remove_packages = status.get("remove_packages", []) or []
 
         return {
-            "updates_available": status.get("status") == "ok",
+            # Trust the package count, not the status string. OPNsense returns
+            # status="ok" when there's nothing to update and other strings
+            # (e.g. "update", "upgrade") when there are — so `status == "ok"`
+            # was inverted and silently masked pending updates. This mirrors
+            # the same fix already applied in get_security_digest().
+            "updates_available": len(upgrade_packages) + len(new_packages) > 0,
             "status_msg": status.get("status_msg"),
             "last_check": status.get("last_check"),
             "current_version": status.get("product_version"),
