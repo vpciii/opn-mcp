@@ -18,6 +18,10 @@ Each notification has two parts:
 
 ## Steps
 
+### 0. Note on update freshness (deliberately NO refresh here)
+
+This task does **not** trigger a firmware check. Doing so hits the package mirror and costs ~30–60s on the firewall; running that every hour just to power a LOW-severity, waking-hours-only "updates available" nudge is wasteful. Instead it reads OPNsense's *cached* firmware status, which the **daily 8am summary task refreshes once a day**. So the pending-updates signal here is at most ~24h stale — fine for its purpose. Do not add a `refresh=true` call to this hourly task. (If the cached `last_check` ever looks many days old, that means the daily refresh isn't running — worth investigating, but not by refreshing from here.)
+
 ### 1. Gather data (one parallel batch)
 
 Fire these in parallel:
