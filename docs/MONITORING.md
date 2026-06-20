@@ -181,7 +181,16 @@ Use mcp__scheduled-tasks__create_scheduled_task with:
 - prompt: <the body of scheduled-tasks/opnsense-security-check/SKILL.md, below the frontmatter>
 ```
 
-And similarly for `opnsense-daily-summary` with `cronExpression: 0 8 * * *` (prompt: the body of `scheduled-tasks/opnsense-daily-summary/SKILL.md`).
+And for `opnsense-daily-summary`:
+
+```
+Use mcp__scheduled-tasks__create_scheduled_task with:
+- taskId: opnsense-daily-summary
+- cronExpression: 0 8 * * *
+- description: Daily 8am OPNsense health summary push notification — heartbeat that monitoring is alive plus 24h roll-up.
+- notifyOnCompletion: false   (the daily HA push is the user-visible signal; no session ping needed)
+- prompt: <the body of scheduled-tasks/opnsense-daily-summary/SKILL.md, below the frontmatter>
+```
 
 Since the `scheduled-tasks/<id>/SKILL.md` files *are* the deployed routines' source (ADR 0008), copying their body is the same as copying them straight into `~/.claude/scheduled-tasks/<taskId>/SKILL.md` — see the scheduled-tasks MCP docs for the exact frontmatter format.
 

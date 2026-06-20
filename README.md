@@ -132,7 +132,7 @@ claude mcp add opnsense -- docker run -i --rm \
 
 The point of `get_security_digest` is to enable autonomous monitoring — a scheduled Claude Code agent that runs the digest on a cron, classifies findings by severity, and pushes notifications to your phone via Home Assistant when something matters.
 
-See **[docs/MONITORING.md](docs/MONITORING.md)** for the full setup: architecture, severity tiers, scheduled-task prompt templates, prerequisites (user-scope MCP, `--init`, permission allow-list), and troubleshooting.
+See **[docs/MONITORING.md](docs/MONITORING.md)** for the full setup: architecture, severity tiers, scheduled-task prompts, prerequisites (user-scope MCP, `--init`, permission allow-list), and troubleshooting.
 
 ## Notes
 

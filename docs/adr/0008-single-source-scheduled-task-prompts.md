@@ -49,11 +49,22 @@ This supersedes PR #14's manual re-sync; that PR's durable value — the
 ## Alternatives considered
 
 - **Generate the templates from the skills + a CI equality check** —
-  keeps a self-contained copy-paste block and is methodology-legal (a
-  generated/checked copy, ADR 0022). Rejected: it adds a generator script
-  and a CI step to maintain for two files whose content already lives one
-  directory away. Single-sourcing by *removal* is simpler than
-  single-sourcing by *generation* when the duplicate need not exist.
+  **equally compliant** with ADR 0022 (a machine-checked copy), and it
+  would preserve a clean one-click copy-paste artifact and a natural home
+  for the per-task settings. Rejected on **scale-to-work** grounds: a
+  generator script + a CI step is disproportionate machinery for two files
+  in a single-user repo — the "tooling for one markdown file is ceremony"
+  reasoning of methodology ADR 0018, which ADR 0022's carve-out preserves.
+  ADR 0022 calls removal the "cheapest correct response" *unless a second
+  copy is genuinely unavoidable*; a setup copy-paste convenience is
+  avoidable (the skill body *is* the prompt). The accepted cost is a modest
+  setup-UX hit (copy the skill body below the frontmatter) and documenting
+  the per-task settings in MONITORING.md rather than a template. This was
+  the live question of an adversarial review of this PR (PUSH BACK,
+  `docs/reviews/pr15_adversarial_review.md`): removal here is a deliberate
+  simplicity-over-UX call, **not** a methodology mandate — for a repo with
+  many tasks or external operators, generate-and-check would be the better
+  trade.
 - **Keep both copies, re-sync by hand (status quo + PR #14)** — rejected:
   this is exactly the memory-synced duplication methodology ADR 0022 names
   as the hazard. It drifts again on the next edit.
