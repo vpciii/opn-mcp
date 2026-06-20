@@ -8,6 +8,8 @@ pending packages reported `updates_available: False` — the same bug that
 was already fixed in get_security_digest() but missed here.
 """
 
+import asyncio
+
 import httpx
 
 import server
@@ -67,3 +69,52 @@ async def test_no_updates_when_no_packages_pending(mock_opnsense, clean_env):
     assert result.get("updates_available") is False, result
     assert result["package_counts"]["upgrade"] == 0
     assert result["package_counts"]["new"] == 0
+
+
+def _recording_serve(status, calls):
+    """Like _serve, but records (method, path) and answers the check POST.
+
+    The async firmware-check trigger lives at /core/firmware/check; the
+    cached status read lives at /core/firmware/status.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        if request.url.path == "/api/core/firmware/check":
+            return httpx.Response(200, json={"status": "ok"})
+        if request.url.path == "/api/core/firmware/status":
+            return httpx.Response(200, json=status)
+        return httpx.Response(404, json={})
+
+    return handler
+
+
+async def test_refresh_triggers_a_firmware_check_before_reading_status(
+    mock_opnsense, clean_env, monkeypatch
+):
+    # refresh=True must POST /core/firmware/check to kick off a fresh check
+    # before reading the cached status. Without it, the daily-summary task's
+    # "refresh first" step is a silent no-op and update counts stay stale —
+    # the failure PR #13 set out to fix. (Adversarial review of PR #13.)
+    async def _instant(_seconds):  # skip the real 3s grace-period wait
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _instant)
+    calls: list[tuple[str, str]] = []
+    mock_opnsense(_recording_serve(_firmware_status(), calls))
+
+    await server.get_updates_available(refresh=True)
+
+    assert ("POST", "/api/core/firmware/check") in calls, calls
+
+
+async def test_default_does_not_trigger_a_firmware_check(mock_opnsense, clean_env):
+    # refresh defaults to False: read the cached status only, never POST a
+    # check. The hourly security-check task depends on this (no mirror hit
+    # per run — see its "deliberately NO refresh" step).
+    calls: list[tuple[str, str]] = []
+    mock_opnsense(_recording_serve(_firmware_status(), calls))
+
+    await server.get_updates_available()
+
+    assert ("POST", "/api/core/firmware/check") not in calls, calls
