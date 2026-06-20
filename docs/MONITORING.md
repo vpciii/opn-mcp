@@ -154,7 +154,7 @@ Cron: `0 * * * *` (local time). Initially set to every 30 minutes, then dialed b
 
 **Behavior**: silent on a clean digest. Notify only when `warnings` is non-empty AND severity rules permit (LOW warnings are deferred outside 08:00–23:00).
 
-**Prompt**: see [scheduled-tasks/security-check.md](scheduled-tasks/security-check.md).
+**Prompt**: the body of [`scheduled-tasks/opnsense-security-check/SKILL.md`](../scheduled-tasks/opnsense-security-check/SKILL.md) — everything below the `---` frontmatter. That skill is the single source (ADR 0008); copy it verbatim.
 
 ### `opnsense-daily-summary` — daily at 08:00
 
@@ -162,7 +162,7 @@ Cron: `0 8 * * *` (local time).
 
 **Behavior**: heartbeat. Always sends a notification regardless of whether warnings are present. Confirms monitoring is alive and gives a 24-hour roll-up of stats.
 
-**Prompt**: see [scheduled-tasks/daily-summary.md](scheduled-tasks/daily-summary.md).
+**Prompt**: the body of [`scheduled-tasks/opnsense-daily-summary/SKILL.md`](../scheduled-tasks/opnsense-daily-summary/SKILL.md) — everything below the `---` frontmatter. That skill is the single source (ADR 0008); copy it verbatim.
 
 The daily summary is intentionally redundant with the 30-minute check during anomalies — same warnings, just summarized once a day. The point isn't novel information; it's the silence-as-failure-mode problem. If a check task silently breaks (MCP down, credentials expired, network gone), you wouldn't know unless something explicitly fires every day.
 
@@ -177,12 +177,13 @@ Use mcp__scheduled-tasks__create_scheduled_task with:
 - taskId: opnsense-security-check
 - cronExpression: 0 * * * *
 - description: Run get_security_digest hourly and push HA mobile notifications for warnings, with severity-tiered quiet hours.
-- prompt: <copy from docs/scheduled-tasks/security-check.md>
+- notifyOnCompletion: false   (the HA push is the user-visible signal; no session ping needed)
+- prompt: <the body of scheduled-tasks/opnsense-security-check/SKILL.md, below the frontmatter>
 ```
 
-And similarly for `opnsense-daily-summary` with `cronExpression: 0 8 * * *`.
+And similarly for `opnsense-daily-summary` with `cronExpression: 0 8 * * *` (prompt: the body of `scheduled-tasks/opnsense-daily-summary/SKILL.md`).
 
-Or copy the prompts straight into `~/.claude/scheduled-tasks/<taskId>/SKILL.md` files manually — see the scheduled-tasks MCP docs for the exact frontmatter format.
+Since the `scheduled-tasks/<id>/SKILL.md` files *are* the deployed routines' source (ADR 0008), copying their body is the same as copying them straight into `~/.claude/scheduled-tasks/<taskId>/SKILL.md` — see the scheduled-tasks MCP docs for the exact frontmatter format.
 
 ---
 
@@ -211,7 +212,7 @@ The thresholds picked here suit a single-user home network. Adjust to taste:
 | pf state HIGH | 70% | Lots of legitimate concurrent connections. | Want earlier DDoS warning. |
 | Quiet hours | 23:00–08:00 | You sleep different hours. | (Same — just shift the bounds.) |
 
-Severity classification lives in the task prompts (`docs/scheduled-tasks/*.md`). To change a tier, edit the prompt and update the scheduled task via `mcp__scheduled-tasks__update_scheduled_task`.
+Severity classification lives in the task prompts (`scheduled-tasks/*/SKILL.md`). To change a tier, edit the skill and update the scheduled task via `mcp__scheduled-tasks__update_scheduled_task`.
 
 ---
 
