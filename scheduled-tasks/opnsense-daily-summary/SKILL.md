@@ -19,9 +19,10 @@ Each run produces two notifications:
 
 The digest's update info comes from OPNsense's *cached* firmware status, which only refreshes when a check is triggered (e.g. opening the web UI's update page). Left alone it goes stale — it has been observed many days out of date, which made this task report "no updates" while the web UI showed dozens pending. So before gathering, force a fresh check:
 
-1. Call `mcp__opnsense__get_updates_available` with `refresh=true` to kick off the check.
-2. The check runs asynchronously on the firewall and takes ~30–60s. Poll `mcp__opnsense__get_updates_available` (no `refresh`) every ~20s, up to ~5 attempts (~2 min), until its `last_check` string contains **today's** date in America/New_York (e.g. `Sat Jun 20 ... 2026`). Keep that final result.
-3. If it never freshens within the budget, proceed anyway but note "firmware check did not refresh in time — update counts may be stale" in the run report.
+1. Call `mcp__opnsense__get_updates_available` (no `refresh`) to capture the current `last_check` string.
+2. Call `mcp__opnsense__get_updates_available` with `refresh=true` to kick off the check.
+3. The check runs asynchronously on the firewall and takes ~30–60s. Poll `mcp__opnsense__get_updates_available` (no `refresh`) every ~20s, up to ~5 attempts (~2 min), until its `last_check` string changes from the initial captured value. Keep that final result.
+4. If it never changes within the budget, proceed anyway but note "firmware check did not refresh in time — update counts may be stale" in the run report.
 
 Once the check is fresh, the digest's `info.updates` below reflects the true current state. Treat this `get_updates_available` result's `updates_available` / `package_counts` as authoritative for the **Updates** line if it ever disagrees with the digest.
 
