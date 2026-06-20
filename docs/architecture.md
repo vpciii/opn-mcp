@@ -44,7 +44,7 @@ host-side operational tooling.
 | Log parsing & aggregation | Audit-login / filterlog parsers, WAN- vs LAN-origin block splitting, cert-expiry and config-change checks feeding the security digest | `server.py` |
 | Transport entrypoint | `FastMCP("opn-mcp")`; stdio only — no network listener (ADR 0007) | `server.py`, `Dockerfile` |
 | Tests & CI | pytest suite (`httpx.MockTransport`, no live box) + spec-criterion coverage check on every PR | `tests/`, `scripts/`, `.github/workflows/` |
-| Scheduled-task skills | Prompt/skill definitions for the hourly security-check and daily-summary agents that *consume* this server | `scheduled-tasks/`, `docs/scheduled-tasks/`, `docs/MONITORING.md` |
+| Scheduled-task skills | Prompt/skill definitions for the hourly security-check and daily-summary agents that *consume* this server; `scheduled-tasks/<id>/SKILL.md` is the single source (ADR 0008) | `scheduled-tasks/`, `docs/MONITORING.md` |
 | Host cleanup script | launchd job reaping zombie scheduled-task `claude` processes and stale containers on the host | `scripts/` |
 
 ## Data stores
