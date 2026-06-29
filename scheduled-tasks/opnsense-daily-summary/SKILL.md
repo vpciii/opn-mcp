@@ -11,7 +11,7 @@ Each run produces two notifications:
 
 ## Known peers / expected traffic
 
-- **WireGuard peer**: `54.224.141.79` — authorized site-to-site WG endpoint. UDP traffic to/from this IP is expected. Some of it gets incidentally blocked (handshake retries / state churn), which the digest's single-source rule misclassifies as "focused scan" or "active scan/brute". **Treat any "WAN blocks from single source 54.224.141.79 ..." warning as a false positive** — filter it from the warnings list before computing severity. Top-talkers entries for this IP should be shown but labeled `(wg-peer)` per the rule below.
+- **WireGuard peer**: `203.0.113.10` — authorized site-to-site WG endpoint. UDP traffic to/from this IP is expected. Some of it gets incidentally blocked (handshake retries / state churn), which the digest's single-source rule misclassifies as "focused scan" or "active scan/brute". **Treat any "WAN blocks from single source 203.0.113.10 ..." warning as a false positive** — filter it from the warnings list before computing severity. Top-talkers entries for this IP should be shown but labeled `(wg-peer)` per the rule below.
 
 ## Steps
 
@@ -31,7 +31,7 @@ Once the check is fresh, the digest's `info.updates` below reflects the true cur
 Make these calls in parallel (independent — fire in one batch):
 - `mcp__opnsense__get_security_digest` with `window_lines=2000` (deeper than the hourly check so daily totals are more representative)
 - `mcp__opnsense__get_top_talkers` with `top_n=5` — current bandwidth snapshot (this is rate-now, not 24h totals; useful for catching an actively-running miner / exfil, not for after-the-fact analysis)
-- `mcp__opnsense__get_wireguard_status` — site-to-site tunnel health (NPA peer)
+- `mcp__opnsense__get_wireguard_status` — site-to-site tunnel health (SiteB peer)
 - `mcp__opnsense__get_gateway_status` — WAN gateway up/down
 - `mcp__opnsense__get_system_status` — memory / swap
 - `mcp__opnsense__get_unbound_stats` — DNS resolver health
@@ -40,7 +40,7 @@ If any of the four supplemental calls errors, render its body line as `unavailab
 
 ### 2. Build a status icon and severity
 
-Before classifying, **filter out known false positives**: drop any warning whose text matches `WAN blocks from single source 54.224.141.79` (any variant). This is the WG peer — see "Known peers" above. Note the suppression in the run report so it stays visible.
+Before classifying, **filter out known false positives**: drop any warning whose text matches `WAN blocks from single source 203.0.113.10` (any variant). This is the WG peer — see "Known peers" above. Note the suppression in the run report so it stays visible.
 
 Determine the highest-severity warning present from the remaining list (same classification as the security-check task):
 - HIGH = failed logins / denied actions / stopped services / cert expired / cert <7d / "WAN blocks from single source ... (active scan/brute)" / pf state >=90%
@@ -48,7 +48,7 @@ Determine the highest-severity warning present from the remaining list (same cla
 - LOW = pending updates / other unmatched
 
 **Also derive these synthetic warnings** (identical rules to the hourly security-check task) and fold them into the severity decision and the warnings list at the top of the body:
-- **WireGuard NPA tunnel DOWN** (HIGH): from `get_wireguard_status`, the `type:"peer"` row named `NPA_Wireguard` has `peer-status` != "online" OR `latest-handshake-age` > 300s. Ignore the `type:"interface"` row (always reads offline).
+- **WireGuard SiteB tunnel DOWN** (HIGH): from `get_wireguard_status`, the `type:"peer"` row named `SiteB_Wireguard` has `peer-status` != "online" OR `latest-handshake-age` > 300s. Ignore the `type:"interface"` row (always reads offline).
 - **WAN gateway not Online** (HIGH): from `get_gateway_status`, `WAN_DHCP.status_translated` != "Online".
 - **Memory/swap pressure** (MEDIUM): from `get_system_status` `Swap:` line, swap used (total − free) > 512M.
 
@@ -96,7 +96,7 @@ Format roughly:
 **Cert next expiry**: <descr> in <N>d
 **Updates**: available (N packages) | none
 **pf state table**: <current> / <limit> (<pct>%)
-**WireGuard (NPA site-to-site)**: <up — handshake <age>s ago | DOWN (status <peer-status>, last handshake <age>s)>
+**WireGuard (SiteB site-to-site)**: <up — handshake <age>s ago | DOWN (status <peer-status>, last handshake <age>s)>
 **WAN gateway**: <status_translated> (<loss> loss / <delay> delay, or "no monitor IP" when ~)
 **Memory**: <free> free · swap <used>/<total>
 **DNS (Unbound)**: <queries> q · <hit%> cache hit · <avg_ms>ms avg recursion · <timeouts> timeouts (cumulative since resolver start)
@@ -107,7 +107,7 @@ Format roughly:
 
 **Top blocked source/port**: omit each sub-bullet if its list is empty. If `wan_origin_count` is 0, skip the section entirely.
 
-**Top talkers formatting**: convert `rate_bits` to a human-readable rate: `< 1 Mbps` show as `<N> Kbps`, `>= 1 Mbps` show as `<N.N> Mbps`. Skip a row entirely if `rate_bits == 0`. If the addr matches the known WireGuard peer (`54.224.141.79`), append ` (wg-peer)` after the rate so it's clearly tagged as expected traffic rather than something to investigate. If the top-talkers tool returns an error, render `**Top talkers**: unavailable` and continue (don't abort the alert).
+**Top talkers formatting**: convert `rate_bits` to a human-readable rate: `< 1 Mbps` show as `<N> Kbps`, `>= 1 Mbps` show as `<N.N> Mbps`. Skip a row entirely if `rate_bits == 0`. If the addr matches the known WireGuard peer (`203.0.113.10`), append ` (wg-peer)` after the rate so it's clearly tagged as expected traffic rather than something to investigate. If the top-talkers tool returns an error, render `**Top talkers**: unavailable` and continue (don't abort the alert).
 
 **Config changes classification** (use `largest_burst` and `hourly_buckets` from the digest's `info.config_changes`):
 - If `count == 0`: render as `**Config changes (window)**: none`
@@ -115,7 +115,7 @@ Format roughly:
 - If `len(hourly_buckets) >= count * 0.7` (i.e. saves spread across many distinct hours): `<count> — steady (likely automation: ACME / dyndns / scheduled tasks)`
 - Otherwise: `<count> — mixed`
 
-**WireGuard line**: read the `type:"peer"` row named `NPA_Wireguard` (ignore the `type:"interface"` row — it always reads offline). Healthy = `peer-status: online` with `latest-handshake-age` < ~300s → `up — handshake <age>s ago`. Otherwise → `DOWN ...` and treat as a HIGH warning (step 2). Call errored → `unavailable`.
+**WireGuard line**: read the `type:"peer"` row named `SiteB_Wireguard` (ignore the `type:"interface"` row — it always reads offline). Healthy = `peer-status: online` with `latest-handshake-age` < ~300s → `up — handshake <age>s ago`. Otherwise → `DOWN ...` and treat as a HIGH warning (step 2). Call errored → `unavailable`.
 
 **WAN gateway line**: from `WAN_DHCP`. Show `status_translated`. `loss`/`delay` read `~` until a monitor IP is configured on the gateway — render `no monitor IP` in that case rather than `~`. Not Online → HIGH warning.
 

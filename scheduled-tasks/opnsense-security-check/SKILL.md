@@ -13,7 +13,7 @@ Each notification has two parts:
 
 ## Known peers / expected traffic
 
-- **WireGuard peer**: `54.224.141.79` — authorized site-to-site WG endpoint. UDP traffic to/from this IP is expected and has been observed getting incidentally blocked (handshake retries / state-churn / etc.), which the digest's single-source rule then misclassifies as a focused scan or active scan/brute. **Treat any "WAN blocks from single source 54.224.141.79 ..." warning as a false positive.**
+- **WireGuard peer**: `203.0.113.10` — authorized site-to-site WG endpoint. UDP traffic to/from this IP is expected and has been observed getting incidentally blocked (handshake retries / state-churn / etc.), which the digest's single-source rule then misclassifies as a focused scan or active scan/brute. **Treat any "WAN blocks from single source 203.0.113.10 ..." warning as a false positive.**
 - Same goes for WireGuard UDP ports (default 51820/udp) appearing as a top blocked dest port — that's the peer's traffic landing on closed/old ports, not an attacker.
 
 ## Steps
@@ -38,13 +38,13 @@ Start from the digest's `warnings` array, apply the false-positive filter (2a), 
 
 ### 2a. Filter known false positives (WireGuard peer)
 
-Drop any digest warning whose text matches `WAN blocks from single source 54.224.141.79` (any variant — focused scan, active scan/brute, etc.). This is the authorized WG peer at `54.224.141.79`; its blocked-UDP noise is not an attack signal. Note this in the run report so the suppression is visible.
+Drop any digest warning whose text matches `WAN blocks from single source 203.0.113.10` (any variant — focused scan, active scan/brute, etc.). This is the authorized WG peer at `203.0.113.10`; its blocked-UDP noise is not an attack signal. Note this in the run report so the suppression is visible.
 
 ### 2b. WireGuard tunnel health (synthetic warning)
 
-From `get_wireguard_status`, find the row with `type: "peer"` and `name: "NPA_Wireguard"` (the site-to-site peer, endpoint `54.224.141.79:51820`). **Ignore the `type: "interface"` row** — it always reports `peer-status: offline` / null handshake and is NOT the tunnel state.
+From `get_wireguard_status`, find the row with `type: "peer"` and `name: "SiteB_Wireguard"` (the site-to-site peer, endpoint `203.0.113.10:51820`). **Ignore the `type: "interface"` row** — it always reports `peer-status: offline` / null handshake and is NOT the tunnel state.
 
-Append a synthetic warning `WireGuard NPA tunnel DOWN (last handshake <age>s ago / status <peer-status>)` if the peer row is missing, OR `peer-status` != `"online"`, OR `latest-handshake-age` (seconds) is `> 300`. A healthy tunnel re-handshakes within its 25s keepalive (age normally < ~180s), so >300s means genuinely down, not a transient miss.
+Append a synthetic warning `WireGuard SiteB tunnel DOWN (last handshake <age>s ago / status <peer-status>)` if the peer row is missing, OR `peer-status` != `"online"`, OR `latest-handshake-age` (seconds) is `> 300`. A healthy tunnel re-handshakes within its 25s keepalive (age normally < ~180s), so >300s means genuinely down, not a transient miss.
 
 ### 2c. WAN gateway health (synthetic warning)
 
@@ -64,7 +64,7 @@ From `get_system_status.activity_summary`, parse the `Swap:` line (format `Swap:
 - Any "Certificate ... expires in N d" where N < 7
 - Any "WAN blocks from single source ... (active scan/brute)" warning (server emits this when one source ≥ 200 hits)
 - Any "pf state table" warning where percent >= 90 (critical)
-- `WireGuard NPA tunnel DOWN ...` (synthetic — site-to-site link lost)
+- `WireGuard SiteB tunnel DOWN ...` (synthetic — site-to-site link lost)
 - `WAN gateway ... is <not Online>` (synthetic — WAN/gateway down)
 
 **MEDIUM** (notify any time, 24/7):
@@ -104,7 +104,7 @@ Determine the highest severity present (HIGH > MEDIUM > LOW). Pick its emoji: �
   - WAN blocks (distributed) → `<N> WAN blocks (flood)`
   - State table → `pf state <pct>%`
   - Updates → `updates available`
-  - WireGuard tunnel down → `WG NPA tunnel down`
+  - WireGuard tunnel down → `WG SiteB tunnel down`
   - WAN gateway down → `WAN gw <status>`
   - Memory/swap pressure → `swap in use <used>`
 - Examples:
