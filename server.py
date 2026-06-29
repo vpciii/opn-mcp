@@ -565,7 +565,7 @@ async def toggle_dnat_rule(uuid: str, enabled: bool) -> dict:
 
 
 # Pattern matching audit-log lines like:
-#   /index.php: Successful login for user 'vince.ciganik' from: 10.216.1.18
+#   /index.php: Successful login for user 'admin' from: 192.0.2.10
 #   /index.php: Failed login for user 'X' from: 1.2.3.4
 #   /index.php: Failed login attempt for unknown user 'X' from: 1.2.3.4
 _LOGIN_RE = re.compile(

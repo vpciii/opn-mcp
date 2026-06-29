@@ -10,22 +10,22 @@ A retrospective review of the merged changes in PR #13, analyzing correctness, t
 > **Class:** Block-level finding (to be resolved via a follow-up PR)
 
 The PR updated the active task instructions in the following files:
-- [scheduled-tasks/opnsense-daily-summary/SKILL.md](file:///Users/vpciii/Developer/personal/opn-mcp/scheduled-tasks/opnsense-daily-summary/SKILL.md)
-- [scheduled-tasks/opnsense-security-check/SKILL.md](file:///Users/vpciii/Developer/personal/opn-mcp/scheduled-tasks/opnsense-security-check/SKILL.md)
+- [scheduled-tasks/opnsense-daily-summary/SKILL.md](https://github.com/vpciii/opn-mcp/blob/main/scheduled-tasks/opnsense-daily-summary/SKILL.md)
+- [scheduled-tasks/opnsense-security-check/SKILL.md](https://github.com/vpciii/opn-mcp/blob/main/scheduled-tasks/opnsense-security-check/SKILL.md)
 
 However, it failed to update the corresponding template files in `docs/scheduled-tasks/`:
-- [docs/scheduled-tasks/daily-summary.md](file:///Users/vpciii/Developer/personal/opn-mcp/docs/scheduled-tasks/daily-summary.md)
-- [docs/scheduled-tasks/security-check.md](file:///Users/vpciii/Developer/personal/opn-mcp/docs/scheduled-tasks/security-check.md)
+- [docs/scheduled-tasks/daily-summary.md](https://github.com/vpciii/opn-mcp/blob/main/docs/scheduled-tasks/daily-summary.md)
+- [docs/scheduled-tasks/security-check.md](https://github.com/vpciii/opn-mcp/blob/main/docs/scheduled-tasks/security-check.md)
 
 ### Impact
-The setup guide at [docs/MONITORING.md#L157](file:///Users/vpciii/Developer/personal/opn-mcp/docs/MONITORING.md#L157) and [docs/MONITORING.md#L165](file:///Users/vpciii/Developer/personal/opn-mcp/docs/MONITORING.md#L165) explicitly directs users to copy their scheduled tasks from those files:
+The setup guide at [docs/MONITORING.md#L157](https://github.com/vpciii/opn-mcp/blob/main/docs/MONITORING.md#L157) and [docs/MONITORING.md#L165](https://github.com/vpciii/opn-mcp/blob/main/docs/MONITORING.md#L165) explicitly directs users to copy their scheduled tasks from those files:
 > **Prompt**: see [scheduled-tasks/daily-summary.md](scheduled-tasks/daily-summary.md)
 
-Because the templates were not updated, any operator setting up the project following [docs/MONITORING.md](file:///Users/vpciii/Developer/personal/opn-mcp/docs/MONITORING.md) will copy obsolete prompts. The copied prompts:
+Because the templates were not updated, any operator setting up the project following [docs/MONITORING.md](https://github.com/vpciii/opn-mcp/blob/main/docs/MONITORING.md) will copy obsolete prompts. The copied prompts:
 1. **Lack the daily refresh step (Step 0)**, which means the OPNsense update alerts will continue to go stale (the exact bug PR #13 claimed to fix).
 2. **Lack the WireGuard, gateway, and memory pressure checks** added in other updates, resulting in silent monitoring failures.
 
-This violates the hard rule in [CLAUDE.md#L54](file:///Users/vpciii/Developer/personal/opn-mcp/CLAUDE.md#L54):
+This violates the hard rule in [CLAUDE.md#L54](https://github.com/vpciii/opn-mcp/blob/main/CLAUDE.md#L54):
 > Docs change in the same PR as the behavior.
 
 ---
@@ -35,7 +35,7 @@ This violates the hard rule in [CLAUDE.md#L54](file:///Users/vpciii/Developer/pe
 > **Status:** UNSTATED CASE / DEFECT
 > **Class:** Logic Flaw
 
-In [scheduled-tasks/opnsense-daily-summary/SKILL.md:L23](file:///Users/vpciii/Developer/personal/opn-mcp/scheduled-tasks/opnsense-daily-summary/SKILL.md#L23), the agent is instructed to poll the `/core/firmware/status` cache:
+In [scheduled-tasks/opnsense-daily-summary/SKILL.md:L23](https://github.com/vpciii/opn-mcp/blob/main/scheduled-tasks/opnsense-daily-summary/SKILL.md#L23), the agent is instructed to poll the `/core/firmware/status` cache:
 > until its `last_check` string contains **today's** date in America/New_York (e.g. `Sat Jun 20 ... 2026`).
 
 ### Impact
@@ -51,12 +51,12 @@ In [scheduled-tasks/opnsense-daily-summary/SKILL.md:L23](file:///Users/vpciii/De
 > **Status:** TEST COVERAGE GAP
 > **Class:** CI Blind Spot
 
-1. **`refresh` logic is not covered:** While the regression tests in [tests/test_updates_available.py](file:///Users/vpciii/Developer/personal/opn-mcp/tests/test_updates_available.py) verify the boolean inversion for `updates_available`, they never pass `refresh=True` to [get_updates_available](file:///Users/vpciii/Developer/personal/opn-mcp/server.py#L765). The async trigger code:
+1. **`refresh` logic is not covered:** While the regression tests in [tests/test_updates_available.py](https://github.com/vpciii/opn-mcp/blob/main/tests/test_updates_available.py) verify the boolean inversion for `updates_available`, they never pass `refresh=True` to [get_updates_available](https://github.com/vpciii/opn-mcp/blob/main/server.py#L765). The async trigger code:
    ```python
    await _post("/core/firmware/check")
    await asyncio.sleep(3)
    ```
-   at [server.py:L774-783](file:///Users/vpciii/Developer/personal/opn-mcp/server.py#L774-783) goes completely unasserted.
+   at [server.py:L774-783](https://github.com/vpciii/opn-mcp/blob/main/server.py#L774-783) goes completely unasserted.
 2. **Agent logic has zero CI coverage:** The test suite verifies the FastMCP server, but has no tests for the actual scheduled task behavior (the polling loop, parsing results, and issuing notifications). This lack of test automation allowed the timezone bug and the document drift to pass CI unnoticed.
 
 ---
@@ -66,7 +66,7 @@ In [scheduled-tasks/opnsense-daily-summary/SKILL.md:L23](file:///Users/vpciii/De
 > **Status:** HUNCH
 > **Class:** Feature Limitation
 
-The update status check in both [get_updates_available](file:///Users/vpciii/Developer/personal/opn-mcp/server.py#L799) and [get_security_digest](file:///Users/vpciii/Developer/personal/opn-mcp/server.py#L1116-1118) derives `updates_available` purely from `upgrade_packages` and `new_packages`:
+The update status check in both [get_updates_available](https://github.com/vpciii/opn-mcp/blob/main/server.py#L799) and [get_security_digest](https://github.com/vpciii/opn-mcp/blob/main/server.py#L1116-1118) derives `updates_available` purely from `upgrade_packages` and `new_packages`:
 ```python
 "updates_available": len(upgrade_packages) + len(new_packages) > 0,
 ```
@@ -79,4 +79,4 @@ If a system has pending removals (`remove_packages`) or reinstalls (`reinstall_p
 ## Verdict: BLOCK
 
 ### Reason
-Although the core python fix for the inverted boolean is correct and verified by a red-to-green test, the PR violated the project's Definition of Done and documentation rules by failing to update the user-facing scheduled task templates in [docs/scheduled-tasks/](file:///Users/vpciii/Developer/personal/opn-mcp/docs/scheduled-tasks/), directly resulting in broken setups for any new user. A follow-up PR is required to synchronize the documentation and address the timezone coupling in the daily summary task.
+Although the core python fix for the inverted boolean is correct and verified by a red-to-green test, the PR violated the project's Definition of Done and documentation rules by failing to update the user-facing scheduled task templates in [docs/scheduled-tasks/](https://github.com/vpciii/opn-mcp/blob/main/docs/scheduled-tasks/), directly resulting in broken setups for any new user. A follow-up PR is required to synchronize the documentation and address the timezone coupling in the daily summary task.

@@ -29,7 +29,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/vpciii/Developer/personal/opn-mcp/scripts/cleanup-stale-scheduled-tasks.sh</string>
+        <string>/Users/youruser/Developer/personal/opn-mcp/scripts/cleanup-stale-scheduled-tasks.sh</string>
     </array>
 
     <!-- Run every 15 minutes (900 seconds). Tighter cadence keeps the
@@ -44,9 +44,9 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/vpciii/Library/Logs/opn-mcp-cleanup.log</string>
+    <string>/Users/youruser/Library/Logs/opn-mcp-cleanup.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/vpciii/Library/Logs/opn-mcp-cleanup.log</string>
+    <string>/Users/youruser/Library/Logs/opn-mcp-cleanup.log</string>
 
     <!-- Inherit user's PATH so docker is findable -->
     <key>EnvironmentVariables</key>
