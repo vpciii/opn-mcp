@@ -155,3 +155,7 @@ docker build -t opn-mcp .
 ```
 
 Then restart Claude Desktop (or your MCP host) so the container respawns from the new image.
+
+## License
+
+Released under the [MIT License](LICENSE) — © 2026 Vince Ciganik. The rationale (MIT for code) is recorded in [ADR 0009](docs/adr/0009-license-under-mit.md).
