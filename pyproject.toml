@@ -2,6 +2,8 @@
 name = "opn-mcp"
 version = "0.1.0"
 description = "MCP server for read-only OPNsense firewall monitoring"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "mcp[cli]>=1.0.0",
