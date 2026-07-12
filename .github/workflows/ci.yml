@@ -25,3 +25,33 @@ jobs:
       # lockfile fails this build (uv sync --locked in the Dockerfile)
       - name: Docker build (locked dependency tree)
         run: docker build -t opn-mcp-ci .
+
+  # Advisory cite-the-test gate (agent-framework; see its docs/adoption.md).
+  # Never blocking: not in required checks; continue-on-error keeps the
+  # workflow green on a REJECT. Skips politely without the GEMINI_API_KEY
+  # secret (also true for fork PRs, which get no secrets).
+  validator:
+    if: github.event_name == 'pull_request'
+    needs: test  # the gate reads CI evidence; the required check runs first
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      statuses: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Cite-the-test gate (advisory)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "::notice::GEMINI_API_KEY secret not set — advisory validator skipped"
+            exit 0
+          fi
+          uvx --from git+https://github.com/vpciii/agent-framework \
+            agent-framework-validate --ignore-check validator ${{ github.event.pull_request.number }}
