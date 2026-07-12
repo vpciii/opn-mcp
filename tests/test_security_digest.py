@@ -223,13 +223,47 @@ async def test_wan_blocks_below_threshold_emit_no_warning(mock_opnsense, clean_e
 
 
 async def test_wan_blocks_at_threshold_emit_warning(mock_opnsense, clean_env):
-    # SC-1 — warning regime: single WAN source at the 200-block gate.
+    # SC-1 — warning regime: single WAN source at the 200-block gate. The
+    # assertion pins WHICH gate fired ("active scan/brute" — the >= 200
+    # single-source gate), not just that some WAN warning appeared: the
+    # >= 50 "focused scan" message shares the same prefix (review finding
+    # on this PR).
     rows = [_filter_log_row("5.6.7.8") for _ in range(200)]
     mock_opnsense(make_handler(firewall_rows=rows))
 
     digest = await server.get_security_digest()
 
     assert digest["info"]["firewall"]["wan_origin_count"] == 200
-    assert any("WAN blocks from single source" in w for w in digest["warnings"]), digest[
-        "warnings"
-    ]
+    assert any("active scan/brute" in w for w in digest["warnings"]), digest["warnings"]
+
+
+async def test_wan_focused_scan_regime_emits_medium_gate_warning(
+    mock_opnsense, clean_env
+):
+    # SC-1 — the middle gate: a single source in the 50-199 regime fires
+    # "focused scan", and provably NOT the >= 200 gate.
+    rows = [_filter_log_row("5.6.7.8") for _ in range(60)]
+    mock_opnsense(make_handler(firewall_rows=rows))
+
+    digest = await server.get_security_digest()
+
+    assert any("focused scan" in w for w in digest["warnings"]), digest["warnings"]
+    assert not any("active scan/brute" in w for w in digest["warnings"])
+
+
+async def test_wan_distributed_flood_regime_emits_flood_warning(
+    mock_opnsense, clean_env
+):
+    # SC-1 — the distributed gate: >= 1000 total WAN blocks with every
+    # source below the 50-hit focused threshold fires "distributed flood"
+    # (and neither single-source gate).
+    rows = []
+    for i in range(25):
+        src = f"9.9.{i}.1"
+        rows.extend(_filter_log_row(src) for _ in range(40))  # 25 * 40 = 1000
+    mock_opnsense(make_handler(firewall_rows=rows))
+
+    digest = await server.get_security_digest()
+
+    assert any("distributed flood" in w for w in digest["warnings"]), digest["warnings"]
+    assert not any("single source" in w for w in digest["warnings"])
