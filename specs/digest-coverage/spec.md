@@ -50,4 +50,4 @@ enforced only by production use.
 
 | Criterion | Requirement(s) | Verified by (test) |
 |---|---|---|
-| SC-1 | R-1, R-2 | *(pending)* |
+| SC-1 | R-1, R-2 | `tests/test_security_digest.py::test_clean_system_emits_no_warnings`, `tests/test_security_digest.py::test_failed_ui_logins_emit_warning`, `tests/test_security_digest.py::test_denied_admin_actions_emit_warning`, `tests/test_security_digest.py::test_stopped_service_emits_warning`, `tests/test_security_digest.py::test_expiring_certificate_emits_warning`, `tests/test_security_digest.py::test_pending_updates_emit_warning`, `tests/test_security_digest.py::test_wan_blocks_below_threshold_emit_no_warning`, `tests/test_security_digest.py::test_wan_blocks_at_threshold_emit_warning` |
