@@ -13,4 +13,4 @@ gate_commands = [
     "docker build -t opn-mcp-ci .",
 ]
 conventions_note = "Read CLAUDE.md and docs/glossary.md; use the glossary's terms exactly. This server is read-only by design (ADR 0003/0006) — never add write capability."
-ignore_checks = ["validator", "claude-review"]
+ignore_checks = ["validator", "review"]
