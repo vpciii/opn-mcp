@@ -1,6 +1,6 @@
 # Tasks: Security-digest test coverage
 
-- **Status:** Draft
+- **Status:** Approved
 - **Spec:** ./spec.md
 - **Plan:** — (single-file test slice; the spec's Requirements are the plan)
 

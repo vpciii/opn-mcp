@@ -1,6 +1,6 @@
 # Spec: Security-digest test coverage
 
-- **Status:** Draft
+- **Status:** Approved
 - **Date:** 2026-07-12
 - **Author:** vpc
 - **Note:** Deliberately small — the first task in this repo dispatched to
