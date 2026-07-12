@@ -3,3 +3,6 @@
 __pycache__/
 .claude/
 .DS_Store
+
+# agent-framework worker worktrees
+.worktrees/

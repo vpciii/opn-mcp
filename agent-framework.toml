@@ -1,0 +1,16 @@
+# agent-framework team configuration (see vpciii/agent-framework
+# docs/adoption.md). [roles] binds roles to models; [project] tells the
+# framework this repo's gate and conventions. Secrets never live here.
+
+[roles]
+worker    = { provider = "anthropic", model = "claude-sonnet-5" }
+validator = { provider = "google",    model = "gemini-3.5-flash" }
+
+[project]
+gate_commands = [
+    "uv run pytest",
+    "uv run python scripts/check_spec_coverage.py",
+    "docker build -t opn-mcp-ci .",
+]
+conventions_note = "Read CLAUDE.md and docs/glossary.md; use the glossary's terms exactly. This server is read-only by design (ADR 0003/0006) — never add write capability."
+ignore_checks = ["validator", "claude-review"]
