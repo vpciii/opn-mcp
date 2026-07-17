@@ -56,10 +56,16 @@ async def tls_api_server(ca):
 
 
 def test_default_settings_verify_tls(clean_env):
-    # SC-2
+    # SC-2 — still stock verification by default; since ADR 0010 it
+    # rides on our own context (for h2-first ALPN) rather than
+    # httpx's, so assert the verifying posture directly
+    clean_env.delenv("OPNSENSE_CA_BUNDLE", raising=False)
     s = server._settings()
     assert s.verify_ssl is True
-    assert server._tls_verify(s) is True  # stock httpx verification, no custom context
+    v = server._tls_verify(s)
+    assert isinstance(v, ssl.SSLContext)
+    assert v.verify_mode == ssl.CERT_REQUIRED
+    assert v.check_hostname is True
 
 
 def test_explicit_false_still_opts_out(clean_env):

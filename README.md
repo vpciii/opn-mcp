@@ -156,6 +156,10 @@ docker build -t opn-mcp .
 
 Then restart Claude Desktop (or your MCP host) so the container respawns from the new image.
 
+### `RemoteProtocolError: malformed chunk footer` on OPNsense 26.7
+
+OPNsense 26.7's web server emits malformed HTTP/1.1 chunked framing on API responses past roughly 100 KB — log fetches beyond ~250 rows (e.g. `get_firewall_blocks` at its default window, or the security digest) fail with this error. The server works around it by negotiating HTTP/2, which has no chunked framing to corrupt (ADR 0010). If you still see it, your container predates the fix — rebuild the image and restart your MCP host as above.
+
 ## License
 
 Released under the [MIT License](LICENSE) — © 2026 Vince Ciganik. The rationale (MIT for code) is recorded in [ADR 0009](docs/adr/0009-license-under-mit.md).
