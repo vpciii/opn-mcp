@@ -101,6 +101,30 @@ async def chunk_mangling_api_server(ca):
     await srv.wait_closed()
 
 
+def test_every_tls_mode_offers_h2_first_in_alpn(ca, tmp_path, clean_env):
+    # httpcore hardcodes the ALPN offer as ["http/1.1", "h2"], and
+    # lighttpd (OPNsense's GUI server) selects the *client's* first
+    # preference — verified live 2026-07-17: openssl s_client with
+    # 'http/1.1,h2' negotiates http/1.1, with 'h2,http/1.1' negotiates
+    # h2. So every context _tls_verify hands out must re-order the
+    # offer h2-first, or http2=True never actually engages.
+    clean_env.delenv("OPNSENSE_CA_BUNDLE", raising=False)
+    modes = {"default": server._tls_verify(server._settings())}
+
+    clean_env.setenv("OPNSENSE_VERIFY_SSL", "false")
+    modes["no-verify"] = server._tls_verify(server._settings())
+
+    clean_env.setenv("OPNSENSE_VERIFY_SSL", "true")
+    bundle = tmp_path / "ca.pem"
+    ca.cert_pem.write_to_path(bundle)
+    clean_env.setenv("OPNSENSE_CA_BUNDLE", str(bundle))
+    modes["ca-bundle"] = server._tls_verify(server._settings())
+
+    for name, ctx in modes.items():
+        ctx.set_alpn_protocols(["http/1.1", "h2"])  # httpcore's order
+        assert ctx._alpn_offered == ["h2", "http/1.1"], name
+
+
 async def test_get_survives_chunk_mangled_http1_by_negotiating_h2(
     chunk_mangling_api_server, ca, tmp_path, clean_env
 ):

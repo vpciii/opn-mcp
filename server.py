@@ -48,23 +48,51 @@ def _settings() -> Settings:
     )
 
 
-def _tls_verify(s: Settings) -> bool | ssl.SSLContext:
+def _prefer_h2(ctx: ssl.SSLContext) -> ssl.SSLContext:
+    """Make the context offer "h2" first in ALPN (ADR 0010).
+
+    httpcore hardcodes the ALPN offer as ["http/1.1", "h2"] and applies
+    it to whatever context it is handed. Most servers select by their
+    own preference, but lighttpd — OPNsense's GUI server — selects the
+    *client's* first-listed protocol, so httpcore's ordering keeps the
+    connection on http/1.1, whose chunked framing OPNsense 26.7
+    corrupts on large responses. Re-ordering the offer here is what
+    actually lands the connection on h2.
+
+    The re-ordered offer is recorded on the context as `_alpn_offered`
+    so tests can observe it (OpenSSL provides no read-back).
+    """
+    orig = ctx.set_alpn_protocols
+
+    def h2_first(protocols: list[str]) -> None:
+        ordered = sorted(protocols, key=lambda p: p != "h2")
+        ctx._alpn_offered = ordered  # type: ignore[attr-defined]
+        orig(ordered)
+
+    ctx.set_alpn_protocols = h2_first  # type: ignore[method-assign]
+    return ctx
+
+
+def _tls_verify(s: Settings) -> ssl.SSLContext:
     """Build the TLS verification parameter for the API client.
 
     OPNSENSE_CA_BUNDLE pins a self-signed / private CA via an ssl
     context cafile (spec R-3) — not the deprecated httpx verify=<path>
     form, and not SSL_CERT_FILE, which httpx ignores under
     trust_env=False.
+
+    Always returns a context (stock-verifying by default) so every mode
+    carries the h2-first ALPN ordering (ADR 0010).
     """
     if not s.verify_ssl:
         # Explicit opt-out: a context that doesn't verify certificates
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-        return ctx
+        return _prefer_h2(ctx)
     if s.ca_bundle:
-        return ssl.create_default_context(cafile=s.ca_bundle)
-    return True
+        return _prefer_h2(ssl.create_default_context(cafile=s.ca_bundle))
+    return _prefer_h2(ssl.create_default_context())
 
 
 def _reraise_with_tls_hint(e: httpx.TransportError) -> NoReturn:
@@ -97,6 +125,14 @@ def _client() -> httpx.AsyncClient:
         auth=(s.api_key, s.api_secret),
         verify=_tls_verify(s),
         timeout=30.0,
+        # Negotiate HTTP/2 (ADR 0010): OPNsense 26.7 mis-frames HTTP/1.1
+        # chunked responses past ~100 KB (log fetches beyond ~250 rows);
+        # h2's length-prefixed frames have no chunked framing to corrupt.
+        # This flag alone is not enough — lighttpd follows the client's
+        # ALPN preference order, so _tls_verify's contexts re-order the
+        # offer h2-first (_prefer_h2). Falls back to http/1.1 via ALPN
+        # against servers that don't offer h2.
+        http2=True,
         # Ignore HTTP(S)_PROXY / NO_PROXY env vars. The OPNsense API is on the
         # LAN and shouldn't be routed through a proxy. This also avoids httpx
         # choking on unbracketed IPv6 CIDRs in NO_PROXY (e.g. those injected

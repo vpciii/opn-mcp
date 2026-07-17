@@ -1,6 +1,6 @@
 # Architecture — opn-mcp
 
-- **Updated:** 2026-06-10 — changes in the **same PR** as the structure
+- **Updated:** 2026-07-17 — changes in the **same PR** as the structure
   it describes (methodology §2).
 
 A short, current-state overview of how the system is shaped **now**,
@@ -40,7 +40,7 @@ host-side operational tooling.
 | Component | Responsibility | Lives in |
 |---|---|---|
 | Tool layer | ~24 `@mcp.tool()` functions (status/inventory, security monitoring incl. `get_security_digest`, firewall/NAT, VPN, logs); the sole write tool `toggle_dnat_rule` refuses anti-lockout and management-path rules structurally (ADR 0006) | `server.py` |
-| HTTP client layer | `_client()` / `_get()` / `_post()`: per-call `httpx.AsyncClient` with basic auth, TLS verified by default with optional CA pinning (ADR 0005), `trust_env=False` | `server.py` |
+| HTTP client layer | `_client()` / `_get()` / `_post()`: per-call `httpx.AsyncClient` with basic auth, TLS verified by default with optional CA pinning (ADR 0005), `trust_env=False`, HTTP/2 negotiated via ALPN (ADR 0010) | `server.py` |
 | Log parsing & aggregation | Audit-login / filterlog parsers, WAN- vs LAN-origin block splitting, cert-expiry and config-change checks feeding the security digest | `server.py` |
 | Transport entrypoint | `FastMCP("opn-mcp")`; stdio only — no network listener (ADR 0007) | `server.py`, `Dockerfile` |
 | Tests & CI | pytest suite (`httpx.MockTransport`, no live box) + spec-criterion coverage check on every PR | `tests/`, `scripts/`, `.github/workflows/` |
@@ -66,8 +66,10 @@ Recorded as a decision-capture ADR: `docs/adr/0004`.
   view over it. Endpoint availability varies with OPNsense version and
   installed plugins (e.g. `os-tailscale`).
 - **`mcp[cli]` (FastMCP)** — MCP protocol server, stdio transport.
-- **`httpx`** — async HTTP client to OPNsense; `trust_env=False` to
-  bypass proxy env vars (see README troubleshooting).
+- **`httpx[http2]`** — async HTTP client to OPNsense; `trust_env=False`
+  to bypass proxy env vars (see README troubleshooting); the `http2`
+  extra (`h2`/`hpack`/`hyperframe`) because OPNsense 26.7 mis-frames
+  large HTTP/1.1 chunked responses (ADR 0010).
 - **Docker** — packaging for the stdio (Claude Desktop / Claude Code)
   deployment mode.
 - Lockfile: `uv.lock` (committed).
@@ -112,3 +114,5 @@ Recorded in ADRs: `docs/adr/0002` (credentials; superseded in part by
 - **ADR 0006** — structural anti-lockout / management-path guard and
   honest toggle failures.
 - **ADR 0007** — stdio-only transport; the SSE transport retired.
+- **ADR 0010** — HTTP/2 to the OPNsense API (works around 26.7's
+  malformed HTTP/1.1 chunked framing on large responses).
